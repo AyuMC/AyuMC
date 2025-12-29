@@ -5,6 +5,13 @@ import '../protocol/packet_reader.dart';
 import 'status_handler.dart';
 import '../constants/network_constants.dart';
 
+class _VarIntResult {
+  final int value;
+  final int size;
+
+  _VarIntResult({required this.value, required this.size});
+}
+
 class ConnectionHandler {
   final Socket _socket;
   final List<int> _buffer = [];
@@ -32,22 +39,28 @@ class ConnectionHandler {
   void _processPackets() {
     while (_buffer.isNotEmpty) {
       try {
-        final packetLength = _readVarIntFromBuffer();
-        if (packetLength == null) {
+        final result = _readVarIntFromBuffer();
+        if (result == null) {
           break;
         }
+
+        final packetLength = result.value;
+        final varIntSize = result.size;
+        final totalPacketSize = varIntSize + packetLength;
 
         if (packetLength > NetworkConstants.maxPacketSize) {
           _socket.close();
           return;
         }
 
-        if (_buffer.length < packetLength) {
+        if (_buffer.length < totalPacketSize) {
           break;
         }
 
-        final packetData = Uint8List.fromList(_buffer.sublist(0, packetLength));
-        _buffer.removeRange(0, packetLength);
+        final packetData = Uint8List.fromList(
+          _buffer.sublist(0, totalPacketSize),
+        );
+        _buffer.removeRange(0, totalPacketSize);
 
         _handlePacket(packetData);
       } catch (e) {
@@ -58,7 +71,7 @@ class ConnectionHandler {
     }
   }
 
-  int? _readVarIntFromBuffer() {
+  _VarIntResult? _readVarIntFromBuffer() {
     if (_buffer.isEmpty) return null;
 
     int value = 0;
@@ -72,7 +85,7 @@ class ConnectionHandler {
       value |= (currentByte & 0x7F) << (position * 7);
 
       if ((currentByte & 0x80) == 0) {
-        return value;
+        return _VarIntResult(value: value, size: offset + 1);
       }
 
       offset++;
