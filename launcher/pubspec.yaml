@@ -5,3 +5,7 @@ version: 0.0.1
 
 environment:
   sdk: ^3.10.4
+
+dependencies:
+  ayumc_server:
+    path: ../server
