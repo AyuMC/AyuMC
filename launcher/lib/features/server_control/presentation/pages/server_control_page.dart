@@ -5,6 +5,7 @@ import '../../data/repositories/server_repository_impl.dart';
 import '../bloc/server_bloc.dart';
 import '../bloc/server_state.dart';
 import '../widgets/start_server_button.dart';
+import '../widgets/stop_server_button.dart';
 import '../widgets/server_status_indicator.dart';
 
 class ServerControlPage extends StatelessWidget {
@@ -44,6 +45,8 @@ class ServerControlView extends StatelessWidget {
               ServerStatusIndicator(),
               SizedBox(height: 32),
               StartServerButton(),
+              SizedBox(height: 16),
+              StopServerButton(),
             ],
           ),
         ),
