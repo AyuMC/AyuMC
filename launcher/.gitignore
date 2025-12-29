@@ -34,3 +34,6 @@ app.*.map.json
 **/linux/flutter/generated_plugin_registrant.cc
 **/linux/flutter/generated_plugin_registrant.h
 
+# Coding Standards (should not be pushed)
+CODING_STANDARDS.md
+

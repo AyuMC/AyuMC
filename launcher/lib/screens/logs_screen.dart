@@ -1,2 +1,0 @@
-// Server logs viewer screen
-

@@ -1,2 +1,0 @@
-// Server state model
-
