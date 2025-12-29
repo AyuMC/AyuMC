@@ -27,3 +27,6 @@ dist/
 out/
 *.jar
 *.exe
+
+# Coding Standards (should not be pushed)
+CODING_STANDARDS.md

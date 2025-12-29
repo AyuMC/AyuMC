@@ -1,0 +1,32 @@
+import 'dart:typed_data';
+import 'var_int.dart';
+
+class PacketWriter {
+  final List<int> _buffer = [];
+
+  void writeVarInt(int value) {
+    final size = VarInt.getSize(value);
+    final bytes = Uint8List(size);
+    VarInt.write(bytes, 0, value);
+    _buffer.addAll(bytes);
+  }
+
+  void writeString(String value) {
+    final bytes = value.codeUnits;
+    writeVarInt(bytes.length);
+    _buffer.addAll(bytes);
+  }
+
+  void writeUnsignedShort(int value) {
+    _buffer.add((value >> 8) & 0xFF);
+    _buffer.add(value & 0xFF);
+  }
+
+  void writeLong(int value) {
+    for (int i = 7; i >= 0; i--) {
+      _buffer.add((value >> (i * 8)) & 0xFF);
+    }
+  }
+
+  Uint8List toBytes() => Uint8List.fromList(_buffer);
+}
