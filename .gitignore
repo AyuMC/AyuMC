@@ -1,0 +1,36 @@
+# Dart
+.dart_tool/
+.packages
+pubspec.lock
+build/
+*.dart.js
+*.dart.js.map
+*.info.json
+*.js
+*.js_
+*.js.deps
+*.js.map
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# Server runtime files
+server/logs/
+server/worlds/
+server/crash-reports/
+server/cache/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build outputs
+dist/
+out/
+*.jar
+*.exe

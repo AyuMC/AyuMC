@@ -1,0 +1,14 @@
+name: example_plugin
+description: Example plugin for AyuMC
+publish_to: "none"
+version: 0.0.1
+
+environment:
+  sdk: ^3.10.4
+
+dependencies:
+  ayumc_api:
+    path: ../../packages/api
+
+dev_dependencies:
+  lints: ^6.0.0

@@ -1,0 +1,7 @@
+name: ExamplePlugin
+version: 0.0.1
+main: example_plugin
+description: An example plugin for AyuMC
+author: YourName
+api-version: 1.0.0
+

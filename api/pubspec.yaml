@@ -1,0 +1,7 @@
+name: ayumc_api
+description: AyuMC Plugin Development Kit
+publish_to: "none"
+version: 0.0.1
+
+environment:
+  sdk: ^3.10.4

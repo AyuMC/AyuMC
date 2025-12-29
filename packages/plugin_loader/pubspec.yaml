@@ -1,0 +1,16 @@
+name: ayumc_plugin_loader
+description: Plugin loading and management system for AyuMC
+publish_to: "none"
+version: 0.0.1
+
+environment:
+  sdk: ^3.10.4
+
+dependencies:
+  ayumc_api:
+    path: ../api
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6
+
