@@ -18,13 +18,6 @@ build/
 *.ipr
 *.iws
 
-# Server runtime files
-server/logs/
-server/worlds/
-server/crash-reports/
-server/cache/
-*.log
-
 # OS
 .DS_Store
 Thumbs.db
