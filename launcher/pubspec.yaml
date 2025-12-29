@@ -1,11 +1,25 @@
-name: ayumc_api
-description: DartMC Server Launcher
+name: ayumc_launcher
+description: AyuMC Server Launcher - GUI Application
 publish_to: "none"
 version: 0.0.1
 
 environment:
   sdk: ^3.10.4
+  flutter: ">=3.0.0"
 
 dependencies:
+  flutter:
+    sdk: flutter
+
   ayumc_server:
     path: ../server
+
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
