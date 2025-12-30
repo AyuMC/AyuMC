@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../../../core/constants/app_constants.dart';
 import '../../data/repositories/server_repository_impl.dart';
 import '../bloc/server_bloc.dart';
 import '../bloc/server_state.dart';
-import '../widgets/start_server_button.dart';
-import '../widgets/stop_server_button.dart';
-import '../widgets/server_status_indicator.dart';
+import '../widgets/server_control_panel.dart';
+import '../widgets/server_status_card.dart';
 
 class ServerControlPage extends StatelessWidget {
   const ServerControlPage({super.key});
@@ -25,30 +23,27 @@ class ServerControlView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text(AppConstants.appName)),
-      body: BlocListener<ServerBloc, ServerState>(
-        listener: (context, state) {
-          if (state is ServerFailure) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(state.message),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-        },
-        child: const Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              ServerStatusIndicator(),
-              SizedBox(height: 32),
-              StartServerButton(),
-              SizedBox(height: 16),
-              StopServerButton(),
-            ],
-          ),
+    return BlocListener<ServerBloc, ServerState>(
+      listener: (context, state) {
+        if (state is ServerFailure) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(state.message),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      },
+      child: const Padding(
+        padding: EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ServerStatusCard(),
+            SizedBox(height: 24),
+            ServerControlPanel(),
+          ],
         ),
       ),
     );

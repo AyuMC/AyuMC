@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'core/navigation/navigation_cubit.dart';
 import 'core/theme/app_theme.dart';
-import 'features/server_control/presentation/pages/server_control_page.dart';
+import 'features/main/presentation/pages/main_page.dart';
 
 void main() {
   runApp(const AyuMCLauncher());
@@ -11,13 +13,15 @@ class AyuMCLauncher extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'AyuMC Launcher',
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
-      themeMode: ThemeMode.system,
-      home: const ServerControlPage(),
-      debugShowCheckedModeBanner: false,
+    return BlocProvider(
+      create: (context) => NavigationCubit(),
+      child: MaterialApp(
+        title: 'AyuMC Launcher',
+        theme: AppTheme.darkTheme,
+        themeMode: ThemeMode.dark,
+        home: const MainPage(),
+        debugShowCheckedModeBanner: false,
+      ),
     );
   }
 }
