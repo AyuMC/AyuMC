@@ -17,16 +17,24 @@ class AyuMCServer {
     }
 
     state = ServerState.starting;
-    print('[Server] Starting AyuMC Server...');
-    print('[Server] Initializing high-performance systems...');
+    _logger.info('Server', 'Starting AyuMC Server...');
+    _logger.info('Server', 'Initializing high-performance systems...');
 
     try {
       await _server.start();
       state = ServerState.running;
-      print('[Server] AyuMC Server started successfully');
+      _logger.info('Server', 'AyuMC Server started successfully');
+      _logger.info('Server', '════════════════════════════════════════════');
+      _logger.info('Server', '         AyuMC Server - READY              ');
+      _logger.info('Server', '════════════════════════════════════════════');
+      _logger.info('Server', ' Status: ONLINE');
+      _logger.info('Server', ' Protocol: Minecraft Java Edition');
+      _logger.info('Server', ' Max Players: 5000+');
+      _logger.info('Server', ' Architecture: Multi-threaded');
+      _logger.info('Server', '════════════════════════════════════════════');
     } catch (e) {
       state = ServerState.stopped;
-      print('[Server] Failed to start: $e');
+      _logger.error('Server', 'Failed to start: $e');
       rethrow;
     }
   }
@@ -37,17 +45,17 @@ class AyuMCServer {
     }
 
     state = ServerState.stopping;
-    print('[Server] Stopping AyuMC Server...');
+    _logger.info('Server', 'Stopping AyuMC Server...');
 
     await _server.stop();
     state = ServerState.stopped;
 
-    print('[Server] AyuMC Server stopped');
+    _logger.info('Server', 'AyuMC Server stopped');
   }
 
   static Future<void> restart() async {
     state = ServerState.restarting;
-    print('[Server] Restarting AyuMC Server...');
+    _logger.info('Server', 'Restarting AyuMC Server...');
 
     await stop();
     await Future.delayed(const Duration(milliseconds: 500));

@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+
+import '../../domain/entities/server_log.dart';
 import '../../domain/repositories/log_repository.dart';
 import '../bloc/console_bloc.dart';
 import '../bloc/console_event.dart';
 import '../bloc/console_state.dart';
+import '../widgets/builders/console_content_builder.dart';
+import '../widgets/builders/console_status_bar_builder.dart';
 import '../widgets/builders/console_toolbar_builder.dart';
-import '../widgets/builders/log_item_builder.dart';
+import '../utils/console_scroll_manager.dart';
 
 /// Console page for displaying server logs in real-time.
 ///
-/// Features auto-scrolling, filtering, and searching capabilities.
+/// Clean, professional implementation with separated concerns.
+/// All logic is managed by BLoC, UI is purely presentational.
 class ConsolePage extends StatefulWidget {
   final LogRepository logRepository;
 
@@ -20,12 +25,17 @@ class ConsolePage extends StatefulWidget {
 }
 
 class _ConsolePageState extends State<ConsolePage> {
-  final ScrollController _scrollController = ScrollController();
-  bool _autoScroll = true;
+  late final ConsoleScrollManager _scrollManager;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollManager = ConsoleScrollManager();
+  }
 
   @override
   void dispose() {
-    _scrollController.dispose();
+    _scrollManager.dispose();
     super.dispose();
   }
 
@@ -35,113 +45,46 @@ class _ConsolePageState extends State<ConsolePage> {
       create: (context) =>
           ConsoleBloc(logRepository: widget.logRepository)
             ..add(const ConsoleStartListening()),
-      child: BlocBuilder<ConsoleBloc, ConsoleState>(
+      child: BlocConsumer<ConsoleBloc, ConsoleState>(
+        listener: (context, state) {
+          _scrollManager.handleNewLogs(state.logs.length);
+        },
         builder: (context, state) {
-          _scrollToBottomIfNeeded();
-          return _buildConsoleContent(context, state);
-        },
-      ),
-    );
-  }
+          final logsToDisplay = _getDisplayedLogs(state);
 
-  Widget _buildConsoleContent(BuildContext context, ConsoleState state) {
-    return Column(
-      children: [
-        _buildToolbar(context, state),
-        Expanded(child: _buildLogsList(state)),
-        _buildStatusBar(state),
-      ],
-    );
-  }
-
-  Widget _buildToolbar(BuildContext context, ConsoleState state) {
-    return ConsoleToolbarBuilder.build(
-      onClear: () => context.read<ConsoleBloc>().add(const ConsoleClearLogs()),
-      onFilterChanged: (level) =>
-          context.read<ConsoleBloc>().add(ConsoleFilterByLevel(level)),
-      onSearch: (query) =>
-          context.read<ConsoleBloc>().add(ConsoleSearchLogs(query)),
-      currentFilter: state.filterLevel,
-    );
-  }
-
-  Widget _buildLogsList(ConsoleState state) {
-    final logsToDisplay =
-        state.searchQuery.isNotEmpty || state.filterLevel != null
-        ? state.filteredLogs
-        : state.logs;
-
-    if (logsToDisplay.isEmpty) {
-      return _buildEmptyState();
-    }
-
-    return Container(
-      color: Colors.black,
-      child: ListView.builder(
-        controller: _scrollController,
-        itemCount: logsToDisplay.length,
-        itemBuilder: (context, index) {
-          return LogItemBuilder.build(logsToDisplay[index]);
-        },
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return const Center(
-      child: Text(
-        'No logs yet. Start the server to see logs.',
-        style: TextStyle(color: Colors.grey),
-      ),
-    );
-  }
-
-  Widget _buildStatusBar(ConsoleState state) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.grey[900],
-        border: Border(top: BorderSide(color: Colors.grey[800]!, width: 1)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            '${state.logs.length} logs',
-            style: const TextStyle(fontSize: 12, color: Colors.grey),
-          ),
-          Row(
+          return Column(
             children: [
-              Checkbox(
-                value: _autoScroll,
-                onChanged: (value) {
-                  setState(() {
-                    _autoScroll = value ?? true;
-                  });
-                },
+              ConsoleToolbarBuilder.build(
+                onClear: () =>
+                    context.read<ConsoleBloc>().add(const ConsoleClearLogs()),
+                onFilterChanged: (level) => context.read<ConsoleBloc>().add(
+                  ConsoleFilterByLevel(level),
+                ),
+                onSearch: (query) =>
+                    context.read<ConsoleBloc>().add(ConsoleSearchLogs(query)),
+                currentFilter: state.filterLevel,
               ),
-              const Text(
-                'Auto-scroll',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
+              Expanded(
+                child: ConsoleContentBuilder.buildLogsList(
+                  logs: logsToDisplay,
+                  scrollController: _scrollManager.scrollController,
+                ),
+              ),
+              ConsoleStatusBarBuilder.build(
+                logCount: state.logs.length,
+                autoScroll: _scrollManager.autoScroll,
+                onAutoScrollChanged: _scrollManager.setAutoScroll,
               ),
             ],
-          ),
-        ],
+          );
+        },
       ),
     );
   }
 
-  void _scrollToBottomIfNeeded() {
-    if (_autoScroll && _scrollController.hasClients) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            _scrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
-        }
-      });
-    }
+  List<ServerLog> _getDisplayedLogs(ConsoleState state) {
+    return state.searchQuery.isNotEmpty || state.filterLevel != null
+        ? state.filteredLogs
+        : state.logs;
   }
 }
