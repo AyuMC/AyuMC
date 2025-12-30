@@ -10,8 +10,3 @@ This directory contains runtime files for the AyuMC server.
 - **logs/**: Server log files
 - **cache/**: Temporary cache files
 - **crash-reports/**: Crash report files
-
-## Note
-
-This directory is for runtime files only. It is not a Dart package and does not contain a `pubspec.yaml` file.
-

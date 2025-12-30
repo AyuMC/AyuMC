@@ -14,6 +14,8 @@ class ConnectionHandler {
   Timer? _processTimer;
   bool _isClosed = false;
 
+  Function()? onClose;
+
   ConnectionHandler(this._socket)
     : _receiveBuffer = PacketBuffer(),
       _sendQueue = SendQueue(_socket) {
@@ -100,6 +102,7 @@ class ConnectionHandler {
     _receiveBuffer.clear();
     _sendQueue.clear();
     _socket.close();
+    onClose?.call();
   }
 
   void close() {
