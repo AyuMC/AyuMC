@@ -1,26 +1,26 @@
+import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
+import 'buffer/packet_buffer.dart';
+import 'buffer/send_queue.dart';
+import 'packet_processor.dart';
 import '../protocol/packet.dart';
-import '../protocol/packet_reader.dart';
-import 'status_handler.dart';
-import '../constants/network_constants.dart';
-
-class _VarIntResult {
-  final int value;
-  final int size;
-
-  _VarIntResult({required this.value, required this.size});
-}
 
 class ConnectionHandler {
   final Socket _socket;
-  final List<int> _buffer = [];
+  final PacketBuffer _receiveBuffer;
+  final SendQueue _sendQueue;
+  Timer? _processTimer;
+  bool _isClosed = false;
 
-  ConnectionHandler(this._socket) {
+  ConnectionHandler(this._socket)
+    : _receiveBuffer = PacketBuffer(),
+      _sendQueue = SendQueue(_socket) {
     _setupSocket();
   }
 
   void _setupSocket() {
+    _socket.setOption(SocketOption.tcpNoDelay, true);
+
     _socket.listen(
       _onData,
       onError: _onError,
@@ -28,121 +28,71 @@ class ConnectionHandler {
       cancelOnError: false,
     );
 
-    _socket.setOption(SocketOption.tcpNoDelay, true);
+    _startProcessing();
+  }
+
+  void _startProcessing() {
+    _processTimer = Timer.periodic(
+      const Duration(milliseconds: 1),
+      (_) => _processPackets(),
+    );
   }
 
   void _onData(List<int> data) {
-    _buffer.addAll(data);
-    _processPackets();
+    if (_isClosed) return;
+    _receiveBuffer.append(data);
   }
 
   void _processPackets() {
-    while (_buffer.isNotEmpty) {
+    if (_isClosed) return;
+
+    int processed = 0;
+    const maxPerCycle = 50;
+
+    while (processed < maxPerCycle) {
+      final packetData = _receiveBuffer.tryReadPacket();
+      if (packetData == null) break;
+
       try {
-        final result = _readVarIntFromBuffer();
-        if (result == null) {
-          break;
-        }
-
-        final packetLength = result.value;
-        final varIntSize = result.size;
-        final totalPacketSize = varIntSize + packetLength;
-
-        if (packetLength > NetworkConstants.maxPacketSize) {
-          _socket.close();
-          return;
-        }
-
-        if (_buffer.length < totalPacketSize) {
-          break;
-        }
-
-        final packetData = Uint8List.fromList(
-          _buffer.sublist(0, totalPacketSize),
-        );
-        _buffer.removeRange(0, totalPacketSize);
-
-        _handlePacket(packetData);
+        final packet = Packet.fromBytes(packetData);
+        PacketProcessor.process(packet, _sendQueue.enqueue);
+        processed++;
       } catch (e) {
-        print('[Network] Error processing packet: $e');
-        _socket.close();
+        print('[Network] Packet processing error: $e');
+        _close();
         return;
       }
     }
   }
 
-  _VarIntResult? _readVarIntFromBuffer() {
-    if (_buffer.isEmpty) return null;
-
-    int value = 0;
-    int position = 0;
-    int offset = 0;
-
-    while (true) {
-      if (offset >= _buffer.length) return null;
-
-      final currentByte = _buffer[offset];
-      value |= (currentByte & 0x7F) << (position * 7);
-
-      if ((currentByte & 0x80) == 0) {
-        return _VarIntResult(value: value, size: offset + 1);
-      }
-
-      offset++;
-      position++;
-
-      if (position >= 5) {
-        return null;
-      }
-    }
-  }
-
-  void _handlePacket(Uint8List data) {
-    try {
-      final packet = Packet.fromBytes(data);
-      final reader = PacketReader(packet.data);
-
-      if (packet.id == 0) {
-        _handleStatusRequest();
-      } else if (packet.id == 1) {
-        _handlePingRequest(reader);
-      }
-    } catch (e) {
-      print('[Network] Error handling packet: $e');
-    }
-  }
-
-  void _handleStatusRequest() {
-    final response = StatusHandler.handleStatusRequest();
-    _sendPacket(response);
-  }
-
-  void _handlePingRequest(PacketReader reader) {
-    final response = StatusHandler.handlePingRequest(reader);
-    _sendPacket(response);
-  }
-
-  void _sendPacket(Packet packet) {
-    try {
-      final bytes = packet.toBytes();
-      _socket.add(bytes);
-    } catch (e) {
-      print('[Network] Error sending packet: $e');
-    }
-  }
-
   void _onError(Object error) {
-    print('[Network] Socket error: $error');
+    if (!_isClosed) {
+      print('[Network] Socket error: $error');
+      _close();
+    }
   }
 
   void _onDone() {
-    print(
-      '[Network] Client disconnected: '
-      '${_socket.remoteAddress.address}:${_socket.remotePort}',
-    );
+    if (!_isClosed) {
+      print(
+        '[Network] Client disconnected: '
+        '${_socket.remoteAddress.address}:${_socket.remotePort}',
+      );
+      _close();
+    }
+  }
+
+  void _close() {
+    if (_isClosed) return;
+    _isClosed = true;
+
+    _processTimer?.cancel();
+    _receiveBuffer.clear();
+    _sendQueue.clear();
+    _socket.close();
   }
 
   void close() {
-    _socket.close();
+    _close();
   }
 }
