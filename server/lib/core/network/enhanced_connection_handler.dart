@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import '../connection/connection_state.dart';
+import '../handlers/play_handler.dart';
 import '../protocol/packet.dart';
 import '../protocol/packet_ids.dart';
 import '../protocol/packets/handshake/handshake_packet.dart';
@@ -129,9 +130,20 @@ class EnhancedConnectionHandler {
       if (session != null && session.isActive) {
         _playerUsername = username;
         _connectionState = ConnectionState.play;
+
+        // Generate entity ID (simple counter for now)
+        final entityId = session.hashCode & 0x7FFFFFFF;
+
+        // Send Join Game packet
+        final joinGamePacket = PlayHandler.createJoinGamePacket(
+          session,
+          entityId,
+        );
+        _sendQueue.enqueue(joinGamePacket);
+
         print(
           '[EnhancedConnectionHandler] Player $username '
-          'successfully logged in and transitioned to PLAY state',
+          'joined the game (Entity ID: $entityId)',
         );
       }
     } catch (e) {

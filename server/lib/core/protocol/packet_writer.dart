@@ -28,5 +28,23 @@ class PacketWriter {
     }
   }
 
+  void writeInt(int value) {
+    for (int i = 3; i >= 0; i--) {
+      _buffer.add((value >> (i * 8)) & 0xFF);
+    }
+  }
+
+  void writeByte(int value) {
+    _buffer.add(value & 0xFF);
+  }
+
+  void writeBool(bool value) {
+    _buffer.add(value ? 1 : 0);
+  }
+
+  void writeBytes(Uint8List bytes) {
+    _buffer.addAll(bytes);
+  }
+
   Uint8List toBytes() => Uint8List.fromList(_buffer);
 }
