@@ -66,4 +66,12 @@ class VarInt {
 
     return size == 0 ? 1 : size;
   }
+
+  /// Encodes a value to a VarInt byte array.
+  static Uint8List encode(int value) {
+    final size = getSize(value);
+    final buffer = Uint8List(size);
+    write(buffer, 0, value);
+    return buffer;
+  }
 }

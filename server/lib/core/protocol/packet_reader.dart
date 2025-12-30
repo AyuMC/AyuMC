@@ -35,7 +35,20 @@ class PacketReader {
     return value;
   }
 
+  bool readBool() {
+    final value = _data[_offset] != 0;
+    _offset++;
+    return value;
+  }
+
+  Uint8List readBytes(int length) {
+    final bytes = _data.sublist(_offset, _offset + length);
+    _offset += length;
+    return bytes;
+  }
+
   int get remaining => _data.length - _offset;
+  bool get hasRemaining => _offset < _data.length;
   int get offset => _offset;
   set offset(int value) => _offset = value;
 }

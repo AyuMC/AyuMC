@@ -1,0 +1,32 @@
+/// Minecraft protocol packet IDs for different connection states.
+class PacketIds {
+  PacketIds._();
+
+  /// Handshake packets (serverbound)
+  static const int handshakeHandshake = 0x00;
+
+  /// Status packets (serverbound)
+  static const int statusRequest = 0x00;
+  static const int statusPing = 0x01;
+
+  /// Status packets (clientbound)
+  static const int statusResponse = 0x00;
+  static const int statusPong = 0x01;
+
+  /// Login packets (serverbound)
+  static const int loginStart = 0x00;
+  static const int loginEncryptionResponse = 0x01;
+  static const int loginPluginResponse = 0x02;
+
+  /// Login packets (clientbound)
+  static const int loginDisconnect = 0x00;
+  static const int loginEncryptionRequest = 0x01;
+  static const int loginSuccess = 0x02;
+  static const int loginCompression = 0x03;
+  static const int loginPluginRequest = 0x04;
+
+  /// Play packets (examples - to be expanded)
+  static const int playJoinGame = 0x26;
+  static const int playKeepAlive = 0x21;
+  static const int playDisconnect = 0x1A;
+}
