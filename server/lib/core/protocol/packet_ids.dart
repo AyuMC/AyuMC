@@ -32,6 +32,11 @@ class PacketIds {
   static const int playPlayerPosition = 0x40;
   static const int playSetDefaultSpawnPosition = 0x56;
   static const int playGameEvent = 0x22;
+  static const int playChunkDataAndLight = 0x27;
+  static const int playChunkBatchStart = 0x0D;
+  static const int playChunkBatchFinished = 0x0E;
+  static const int playSetCenterChunk = 0x54;
+  static const int playUpdateLight = 0x2A;
 
   /// Play packets - Serverbound (client to server)
   static const int playKeepAliveServerbound = 0x18;

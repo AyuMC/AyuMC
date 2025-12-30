@@ -1,5 +1,6 @@
 import 'dart:io';
 import '../constants/network_constants.dart';
+import '../world/map_manager.dart';
 import 'keep_alive/keep_alive_manager.dart';
 import 'optimization/adaptive_scheduler.dart';
 import 'optimization/connection_pool.dart';
@@ -68,6 +69,7 @@ class HighPerformanceTcpServer {
   Future<void> _initializeAllOptimizations() async {
     await _isolatePool.initialize(workerCount: 4);
     _memoryPool.initialize();
+    MapManager().initialize();
 
     NetworkLogger.info(
       'HighPerformanceTcpServer',
@@ -105,6 +107,7 @@ class HighPerformanceTcpServer {
   }
 
   void _printOptimizationStatus() {
+    final worldStats = MapManager().getStatistics();
     print('┌────────────────────────────────────────┐');
     print('│   HIGH PERFORMANCE SERVER STATUS       │');
     print('├────────────────────────────────────────┤');
@@ -113,6 +116,8 @@ class HighPerformanceTcpServer {
     print('│ ✓ Memory Pooling: Active');
     print('│ ✓ Adaptive Scheduler: Active');
     print('│ ✓ Keep Alive System: Active');
+    print('│ ✓ World Manager: Active');
+    print('│   - Overworld chunks: ${worldStats['overworld']}');
     print('│ ✓ Statistics Tracking: Active');
     print('└────────────────────────────────────────┘');
   }

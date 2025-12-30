@@ -8,6 +8,9 @@ import '../protocol/packet_ids.dart';
 import '../protocol/packets/handshake/handshake_packet.dart';
 import '../protocol/packets/login/login_start_packet.dart';
 import '../session/session_manager.dart';
+import '../world/chunk/chunk_sender.dart';
+import '../world/map_dimension.dart';
+import '../world/map_manager.dart';
 import 'buffer/packet_buffer.dart';
 import 'buffer/send_queue.dart';
 import 'packet_processor.dart';
@@ -148,6 +151,9 @@ class EnhancedConnectionHandler {
         // Register for Keep Alive tracking
         PlayHandler.registerForKeepAlive(_socket);
 
+        // Send spawn position and initial chunks
+        _sendInitialWorldData(session);
+
         NetworkLogger.info(
           'EnhancedConnectionHandler',
           'Player $username joined the game (Entity ID: $entityId)',
@@ -157,6 +163,40 @@ class EnhancedConnectionHandler {
       NetworkLogger.error('EnhancedConnectionHandler', 'Login error: $e');
       _close();
     }
+  }
+
+  void _sendInitialWorldData(dynamic session) {
+    // Get spawn position from MapManager
+    final mapManager = MapManager();
+    final (spawnX, spawnY, spawnZ) = mapManager.getSpawnPosition(
+      MapDimension.overworld,
+    );
+
+    // Set player position to spawn
+    session.x = spawnX.toDouble();
+    session.y = spawnY.toDouble();
+    session.z = spawnZ.toDouble();
+
+    // Send spawn position packet
+    final spawnPacket = PlayHandler.createSpawnPositionPacket(
+      x: spawnX,
+      y: spawnY,
+      z: spawnZ,
+    );
+    _socket.add(spawnPacket.toFramedBytes());
+
+    // Send player position packet
+    final posPacket = PlayHandler.createSyncPositionPacket(session, 0);
+    _socket.add(posPacket.toFramedBytes());
+
+    // Send initial chunks
+    ChunkSender.sendInitialChunks(
+      _socket,
+      session.x,
+      session.z,
+      dimension: MapDimension.overworld,
+      viewDistance: 4,
+    );
   }
 
   void _handleHandshake(Uint8List packetData) {
