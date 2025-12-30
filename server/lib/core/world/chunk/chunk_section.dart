@@ -129,4 +129,3 @@ class ChunkSection {
     buffer.addByte(value & 0x7F);
   }
 }
-

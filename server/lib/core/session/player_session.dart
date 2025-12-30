@@ -11,6 +11,9 @@ class PlayerSession {
   ConnectionState _state;
   bool _isActive;
 
+  /// Protocol version from handshake (e.g., 765 for 1.20.4)
+  int protocolVersion;
+
   // Player position (ultra-compact storage)
   double x = 0.0;
   double y = 64.0; // Default spawn height
@@ -23,6 +26,7 @@ class PlayerSession {
     required this.uuid,
     required this.username,
     ConnectionState initialState = ConnectionState.login,
+    this.protocolVersion = 765, // Default: 1.20.4
   }) : loginTime = DateTime.now(),
        _state = initialState,
        _isActive = true;

@@ -1,7 +1,7 @@
 import 'dart:typed_data';
-import '../../packet_ids.dart';
 import '../../packet_reader.dart';
 import '../../packet_writer.dart';
+import '../../protocol_registry.dart';
 import '../../var_int.dart';
 
 /// Keep Alive packet for maintaining connection (Clientbound).
@@ -9,13 +9,18 @@ import '../../var_int.dart';
 /// Ultra-optimized implementation with pre-allocated buffer.
 class KeepAliveClientboundPacket {
   final int keepAliveId;
+  final int protocolVersion;
 
-  const KeepAliveClientboundPacket(this.keepAliveId);
+  const KeepAliveClientboundPacket(
+    this.keepAliveId, {
+    this.protocolVersion = 765, // Default: 1.20.4
+  });
 
   /// Builds the packet bytes with minimal allocations.
   Uint8List toBytes() {
+    final packetIds = ProtocolRegistry.getPacketIds(protocolVersion);
     final writer = PacketWriter();
-    writer.writeVarInt(PacketIds.playKeepAliveClientbound);
+    writer.writeVarInt(packetIds.playKeepAliveClientbound);
     writer.writeLong(keepAliveId);
     return writer.toBytes();
   }

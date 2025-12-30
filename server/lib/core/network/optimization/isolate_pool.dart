@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:isolate';
 import '../../logging/server_logger.dart';
 
@@ -51,7 +52,10 @@ class IsolateWorkerPool {
       return requested.clamp(1, kMaxWorkerCount);
     }
 
-    final cores = 8;
+    // NOTE: The generic pool implementation below uses message passing, but
+    // sending closures across isolates is not supported by Dart. We keep this
+    // pool for future refactor to a message-based task registry.
+    final cores = Platform.numberOfProcessors;
     return (cores - 1).clamp(2, kDefaultWorkerCount);
   }
 

@@ -33,11 +33,8 @@ class Chunk {
   /// Pre-computed world surface heightmap
   Uint8List? _heightmapWorldSurface;
 
-  Chunk({
-    required this.x,
-    required this.z,
-    List<ChunkSection>? sections,
-  }) : _sections = sections ?? _createEmptySections();
+  Chunk({required this.x, required this.z, List<ChunkSection>? sections})
+    : _sections = sections ?? _createEmptySections();
 
   /// Creates empty sections for an air chunk.
   static List<ChunkSection> _createEmptySections() {
@@ -146,4 +143,3 @@ class Chunk {
     return longs;
   }
 }
-

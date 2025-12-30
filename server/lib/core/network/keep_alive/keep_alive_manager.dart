@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 import '../../logging/server_logger.dart';
 import '../../protocol/packets/play/keep_alive_packet.dart';
 
@@ -26,6 +27,9 @@ class KeepAliveManager {
   /// Map of socket hashCode -> connection info
   final Map<int, _ConnectionKeepAlive> _connections = {};
 
+  /// Map of socket hashCode -> protocol version
+  final Map<int, int> _protocolVersions = {};
+
   /// Singleton instance
   static final KeepAliveManager _instance = KeepAliveManager._internal();
   factory KeepAliveManager() => _instance;
@@ -48,11 +52,12 @@ class KeepAliveManager {
     _keepAliveTimer?.cancel();
     _keepAliveTimer = null;
     _connections.clear();
+    _protocolVersions.clear();
     _logger.info(_tag, 'Keep Alive system stopped');
   }
 
   /// Registers a connection for Keep Alive tracking.
-  void registerConnection(Socket socket) {
+  void registerConnection(Socket socket, {int protocolVersion = 765}) {
     final id = socket.hashCode;
     _connections[id] = _ConnectionKeepAlive(
       socket: socket,
@@ -60,11 +65,14 @@ class KeepAliveManager {
       lastResponseTime: DateTime.now(),
       pendingKeepAliveId: null,
     );
+    _protocolVersions[id] = protocolVersion;
   }
 
   /// Unregisters a connection from Keep Alive tracking.
   void unregisterConnection(Socket socket) {
-    _connections.remove(socket.hashCode);
+    final id = socket.hashCode;
+    _connections.remove(id);
+    _protocolVersions.remove(id);
   }
 
   /// Called when a Keep Alive response is received from client.
@@ -85,16 +93,26 @@ class KeepAliveManager {
     _keepAliveCounter++;
     final keepAliveId = _keepAliveCounter;
 
-    // Pre-build packet once for all connections (same ID)
-    final packet = KeepAliveClientboundPacket(keepAliveId);
-    final packetBytes = packet.toFramedBytes();
-
+    // Group by protocol version for batch sending
+    final packetsByVersion = <int, Uint8List>{};
     int sentCount = 0;
 
-    for (final conn in _connections.values) {
+    for (final entry in _connections.entries) {
+      final conn = entry.value;
+      final protocolVersion = _protocolVersions[entry.key] ?? 765;
+
       // Only send if no pending Keep Alive
       if (conn.pendingKeepAliveId == null) {
         try {
+          // Get or create packet for this protocol version
+          final packetBytes = packetsByVersion.putIfAbsent(
+            protocolVersion,
+            () => KeepAliveClientboundPacket(
+              keepAliveId,
+              protocolVersion: protocolVersion,
+            ).toFramedBytes(),
+          );
+
           conn.socket.add(packetBytes);
           conn.lastSentId = keepAliveId;
           conn.pendingKeepAliveId = keepAliveId;

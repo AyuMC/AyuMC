@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import '../../config/server_config.dart';
 import '../../logging/server_logger.dart';
 import '../../protocol/packets/play/chunk_packet.dart';
 import '../map_dimension.dart';
@@ -33,7 +34,16 @@ class ChunkSender {
     double playerZ, {
     MapDimension dimension = MapDimension.overworld,
     int viewDistance = kDefaultViewDistance,
+    int protocolVersion = 765, // Default: 1.20.4
   }) {
+    if (!ServerConfig.kEnableChunkStreaming) {
+      _logger.warning(
+        _tag,
+        'Chunk streaming is disabled (ServerConfig.kEnableChunkStreaming=false).',
+      );
+      return;
+    }
+
     final mapManager = MapManager();
     final centerChunkX = (playerX / 16).floor();
     final centerChunkZ = (playerZ / 16).floor();
@@ -75,7 +85,10 @@ class ChunkSender {
 
     // Send all chunks
     for (final chunk in chunksToSend) {
-      final chunkPacket = ChunkDataPacket(chunk);
+      final chunkPacket = ChunkDataPacket(
+        chunk,
+        protocolVersion: protocolVersion,
+      );
       _sendBytes(socket, chunkPacket.toFramedBytes());
       chunksSent++;
     }
@@ -99,4 +112,3 @@ class ChunkSender {
     }
   }
 }
-

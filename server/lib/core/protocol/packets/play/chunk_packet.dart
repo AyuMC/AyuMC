@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import '../../../world/chunk/chunk.dart';
 import '../../var_int.dart';
 
+import '../../protocol_registry.dart';
+
 /// Chunk Data and Update Light packet (Clientbound).
 ///
 /// Ultra-optimized implementation:
@@ -10,12 +12,16 @@ import '../../var_int.dart';
 /// - Minimal allocations during encoding
 /// - Full light data for proper rendering
 class ChunkDataPacket {
-  /// Packet ID for Chunk Data and Update Light (1.21)
-  static const int kPacketId = 0x27;
-
   final Chunk chunk;
+  final int protocolVersion;
 
-  const ChunkDataPacket(this.chunk);
+  const ChunkDataPacket(
+    this.chunk, {
+    this.protocolVersion = 765, // Default: 1.20.4
+  });
+
+  static final Uint8List _fullSkyLightNibbleArray = Uint8List(2048)
+    ..fillRange(0, 2048, 0xFF);
 
   /// Builds the complete packet ready for transmission.
   Uint8List toFramedBytes() {
@@ -30,10 +36,11 @@ class ChunkDataPacket {
   }
 
   Uint8List _buildPayload() {
+    final packetIds = ProtocolRegistry.getPacketIds(protocolVersion);
     final buffer = BytesBuilder(copy: false);
 
     // Packet ID
-    _writeVarInt(buffer, kPacketId);
+    _writeVarInt(buffer, packetIds.playChunkDataAndLight);
 
     // Chunk X (int)
     _writeInt(buffer, chunk.x);
@@ -107,7 +114,7 @@ class ChunkDataPacket {
     for (int i = 0; i < 25; i++) {
       _writeVarInt(buffer, 2048);
       // Full sky light (0xFF for all nibbles)
-      buffer.add(Uint8List(2048)..fillRange(0, 2048, 0xFF));
+      buffer.add(_fullSkyLightNibbleArray);
     }
 
     // Block light arrays (none)
@@ -233,4 +240,3 @@ class ChunkBatchFinishedPacket {
     buffer.addByte(value & 0x7F);
   }
 }
-

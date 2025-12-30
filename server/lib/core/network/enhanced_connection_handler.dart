@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import '../config/server_config.dart';
 import '../connection/connection_state.dart';
 import '../handlers/play_handler.dart';
 import '../protocol/packet.dart';
@@ -30,6 +31,7 @@ class EnhancedConnectionHandler {
 
   ConnectionState _connectionState = ConnectionState.handshake;
   String? _playerUsername;
+  int _protocolVersion = 765; // Default: 1.20.4
 
   Function()? onClose;
 
@@ -135,6 +137,8 @@ class EnhancedConnectionHandler {
       // Check if login was successful by verifying session exists
       final session = _sessionManager.getByUsername(username);
       if (session != null && session.isActive) {
+        // Store protocol version in session
+        session.protocolVersion = _protocolVersion;
         _playerUsername = username;
         _connectionState = ConnectionState.play;
 
@@ -149,9 +153,9 @@ class EnhancedConnectionHandler {
         _sendQueue.enqueue(joinGamePacket);
 
         // Register for Keep Alive tracking
-        PlayHandler.registerForKeepAlive(_socket);
+        PlayHandler.registerForKeepAlive(_socket, session.protocolVersion);
 
-        // Send spawn position and initial chunks
+        // Send spawn position and (optionally) initial chunks
         _sendInitialWorldData(session);
 
         NetworkLogger.info(
@@ -189,21 +193,27 @@ class EnhancedConnectionHandler {
     final posPacket = PlayHandler.createSyncPositionPacket(session, 0);
     _socket.add(posPacket.toFramedBytes());
 
-    // Send initial chunks
-    ChunkSender.sendInitialChunks(
-      _socket,
-      session.x,
-      session.z,
-      dimension: MapDimension.overworld,
-      viewDistance: 4,
-    );
+    if (ServerConfig.kEnableChunkStreaming) {
+      ChunkSender.sendInitialChunks(
+        _socket,
+        session.x,
+        session.z,
+        dimension: MapDimension.overworld,
+        viewDistance: ServerConfig.kInitialChunkViewDistance,
+        protocolVersion: session.protocolVersion,
+      );
+    }
   }
 
   void _handleHandshake(Uint8List packetData) {
     try {
       // Use parseRaw because we're passing raw packet data with length/ID
       final handshake = HandshakePacket.parseRaw(packetData);
-      NetworkLogger.debug('EnhancedConnectionHandler', 'Handshake: $handshake');
+      _protocolVersion = handshake.protocolVersion;
+      NetworkLogger.debug(
+        'EnhancedConnectionHandler',
+        'Handshake: protocol=$_protocolVersion, nextState=${handshake.nextState}',
+      );
 
       // Transition to the requested state
       _connectionState = handshake.nextState;

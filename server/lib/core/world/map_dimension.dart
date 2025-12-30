@@ -19,4 +19,3 @@ enum MapDimension {
 
   const MapDimension(this.namespaceId, this.folderName);
 }
-

@@ -55,8 +55,11 @@ class PlayHandler {
   }
 
   /// Registers a player connection for Keep Alive tracking.
-  static void registerForKeepAlive(Socket socket) {
-    KeepAliveManager().registerConnection(socket);
+  static void registerForKeepAlive(Socket socket, int protocolVersion) {
+    KeepAliveManager().registerConnection(
+      socket,
+      protocolVersion: protocolVersion,
+    );
   }
 
   /// Unregisters a player from Keep Alive tracking.

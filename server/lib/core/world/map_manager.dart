@@ -1,8 +1,11 @@
 import 'dart:collection';
+import 'dart:isolate';
 
 import '../logging/server_logger.dart';
+import '../config/server_config.dart';
 import 'chunk/chunk.dart';
 import 'map_dimension.dart';
+import 'generation/chunk_encode_pool.dart';
 
 /// Manages all world dimensions and their chunks.
 ///
@@ -28,9 +31,9 @@ class MapManager {
 
   /// Chunk caches per dimension
   final Map<MapDimension, LinkedHashMap<int, Chunk>> _chunkCaches = {
-    MapDimension.overworld: LinkedHashMap(),
-    MapDimension.nether: LinkedHashMap(),
-    MapDimension.end: LinkedHashMap(),
+    MapDimension.overworld: LinkedHashMap<int, Chunk>.from({}),
+    MapDimension.nether: LinkedHashMap<int, Chunk>.from({}),
+    MapDimension.end: LinkedHashMap<int, Chunk>.from({}),
   };
 
   /// Spawn position per dimension
@@ -42,13 +45,30 @@ class MapManager {
 
   bool _initialized = false;
 
+  /// Encoded chunk packet cache (LRU) per dimension.
+  final Map<MapDimension, LinkedHashMap<int, TransferableTypedData>>
+  _encodedChunkCache = {
+    MapDimension.overworld: LinkedHashMap<int, TransferableTypedData>.from({}),
+    MapDimension.nether: LinkedHashMap<int, TransferableTypedData>.from({}),
+    MapDimension.end: LinkedHashMap<int, TransferableTypedData>.from({}),
+  };
+
+  /// In-flight encodes to avoid duplicate work (chunkKey -> Future).
+  final Map<int, Future<TransferableTypedData>> _inflightEncodes = {};
+
   /// Initializes the map manager and generates spawn chunks.
   void initialize() {
     if (_initialized) return;
 
     _logger.info(_tag, 'Initializing MapManager...');
 
-    // Pre-generate spawn chunks for overworld
+    // Initialize multi-threaded chunk encoding pool.
+    if (ServerConfig.kChunkEncodingUseIsolates) {
+      // Fire-and-forget: we can still serve sync chunks while pool spins up.
+      ChunkEncodePool().initialize();
+    }
+
+    // Pre-generate spawn chunks for overworld (sync chunk objects)
     _generateSpawnChunks(MapDimension.overworld);
 
     _initialized = true;
@@ -72,7 +92,10 @@ class MapManager {
       }
     }
 
-    _logger.info(_tag, 'Generated $generated spawn chunks for ${dimension.name}');
+    _logger.info(
+      _tag,
+      'Generated $generated spawn chunks for ${dimension.name}',
+    );
   }
 
   /// Gets a chunk from cache or generates it.
@@ -97,6 +120,59 @@ class MapManager {
     cache[key] = chunk;
 
     return chunk;
+  }
+
+  /// Gets an encoded (framed) Chunk Data packet for a chunk, using isolate-per-core encoding.
+  ///
+  /// Uses:
+  /// - LRU cache for encoded payloads
+  /// - In-flight dedupe to prevent duplicate encodes
+  Future<TransferableTypedData> getOrEncodeChunkPacket(
+    MapDimension dimension,
+    int chunkX,
+    int chunkZ,
+  ) {
+    final key = _chunkKey(chunkX, chunkZ);
+    final cache = _encodedChunkCache[dimension]!;
+
+    if (cache.containsKey(key)) {
+      final cached = cache.remove(key)!;
+      cache[key] = cached;
+      return Future.value(cached);
+    }
+
+    final inflight = _inflightEncodes[key];
+    if (inflight != null) {
+      return inflight;
+    }
+
+    final future = _encodeChunkPacketInternal(dimension, chunkX, chunkZ);
+    _inflightEncodes[key] = future;
+
+    future.whenComplete(() {
+      _inflightEncodes.remove(key);
+    });
+
+    return future.then((encoded) {
+      if (cache.length >= ServerConfig.kMaxEncodedChunkCache) {
+        cache.remove(cache.keys.first);
+      }
+      cache[key] = encoded;
+      return encoded;
+    });
+  }
+
+  Future<TransferableTypedData> _encodeChunkPacketInternal(
+    MapDimension dimension,
+    int chunkX,
+    int chunkZ,
+  ) {
+    // If pool not initialized yet, it will fallback to main isolate encoding.
+    return ChunkEncodePool().encodeFlatChunkPacket(
+      dimension: dimension,
+      chunkX: chunkX,
+      chunkZ: chunkZ,
+    );
   }
 
   /// Generates a chunk for the given position.
@@ -167,6 +243,9 @@ class MapManager {
     for (final cache in _chunkCaches.values) {
       cache.clear();
     }
+    for (final cache in _encodedChunkCache.values) {
+      cache.clear();
+    }
+    _inflightEncodes.clear();
   }
 }
-

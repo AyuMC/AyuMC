@@ -44,7 +44,7 @@ class LoginHandler {
       // Generate offline-mode UUID
       final uuid = _generateOfflineUuid(loginPacket.playerName);
 
-      // Create session
+      // Create session (protocol version will be set by connection handler)
       final session = PlayerSession(
         uuid: uuid,
         username: loginPacket.playerName,
