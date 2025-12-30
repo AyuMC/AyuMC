@@ -10,10 +10,11 @@ class ProtocolRegistry {
   ///
   /// Returns packet IDs optimized for the given version.
   static ProtocolPacketIds getPacketIds(int protocolVersion) {
-    // For now, default to 1.20.4
-    // TODO: Add full version support (1.8 - 1.21.11)
     if (protocolVersion >= ProtocolVersion.v1_21) {
       return ProtocolPacketIds.v1_21();
+    } else if (protocolVersion >= ProtocolVersion.v1_20_6 ||
+        protocolVersion == ProtocolVersion.v1_20_6_alt) {
+      return ProtocolPacketIds.v1_20_6();
     } else if (protocolVersion >= ProtocolVersion.v1_20_4) {
       return ProtocolPacketIds.v1_20_4();
     } else {
@@ -63,6 +64,24 @@ class ProtocolPacketIds {
       playPlayerPosition: 0x3E,
       playSetDefaultSpawnPosition: 0x4E,
       playChunkDataAndLight: 0x24, // Fixed for 1.20.4
+      playChunkBatchStart: 0x0D,
+      playChunkBatchFinished: 0x0E,
+      playSetCenterChunk: 0x50,
+      playPlayerPositionServerbound: 0x18,
+      playChatMessage: 0x06,
+    );
+  }
+
+  /// Packet IDs for Minecraft 1.20.6 (Protocol 766/769)
+  factory ProtocolPacketIds.v1_20_6() {
+    return const ProtocolPacketIds(
+      playJoinGame: 0x28,
+      playKeepAliveClientbound: 0x23, // Same as 1.20.4
+      playKeepAliveServerbound: 0x12,
+      playDisconnect: 0x1D,
+      playPlayerPosition: 0x3E,
+      playSetDefaultSpawnPosition: 0x4E,
+      playChunkDataAndLight: 0x24, // Same as 1.20.4
       playChunkBatchStart: 0x0D,
       playChunkBatchFinished: 0x0E,
       playSetCenterChunk: 0x50,

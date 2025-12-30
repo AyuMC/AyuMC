@@ -1,5 +1,4 @@
 import 'dart:io';
-import '../logging/server_logger.dart';
 import '../network/keep_alive/keep_alive_manager.dart';
 import '../protocol/packet.dart';
 import '../protocol/packet_ids.dart';
@@ -8,6 +7,7 @@ import '../protocol/packets/play/join_game_packet_builder.dart';
 import '../protocol/packets/play/keep_alive_packet.dart';
 import '../protocol/packets/play/position_packet.dart';
 import '../session/player_session.dart';
+import 'chat_handler.dart';
 
 /// Ultra-optimized Play protocol handler.
 ///
@@ -15,9 +15,6 @@ import '../session/player_session.dart';
 /// Designed for 5000+ concurrent players with multi-threaded processing.
 class PlayHandler {
   PlayHandler._();
-
-  static final ServerLogger _logger = ServerLogger();
-  static const String _tag = 'PlayHandler';
 
   // Entity ID generator (atomic counter for thread safety)
   static int _nextEntityId = 1;
@@ -95,7 +92,7 @@ class PlayHandler {
         _handlePlayerRotation(packet, session);
         break;
       case PacketIds.playChatMessage:
-        _handleChatMessage(packet, session);
+        _handleChatMessage(packet, socket, session);
         break;
       default:
         // Ignore unknown packets (reduces log spam)
@@ -110,9 +107,12 @@ class PlayHandler {
   }
 
   /// Handles chat messages from client.
-  static void _handleChatMessage(Packet packet, PlayerSession session) {
-    // TODO: Implement chat message handling
-    _logger.debug(_tag, 'Chat from ${session.username}');
+  static void _handleChatMessage(
+    Packet packet,
+    Socket socket,
+    PlayerSession session,
+  ) {
+    ChatHandler.handleChatMessage(packet, session, socket);
   }
 
   static void _handleTeleportConfirm(Packet packet, PlayerSession session) {

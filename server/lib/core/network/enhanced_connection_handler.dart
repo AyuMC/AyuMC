@@ -14,6 +14,7 @@ import '../world/map_dimension.dart';
 import '../world/map_manager.dart';
 import 'buffer/packet_buffer.dart';
 import 'buffer/send_queue.dart';
+import 'chat_broadcaster.dart';
 import 'packet_processor.dart';
 import 'utils/network_logger.dart';
 
@@ -155,6 +156,9 @@ class EnhancedConnectionHandler {
         // Register for Keep Alive tracking
         PlayHandler.registerForKeepAlive(_socket, session.protocolVersion);
 
+        // Register for chat broadcasting
+        ChatBroadcaster.registerPlayer(session.uuid, _socket);
+
         // Send spawn position and (optionally) initial chunks
         _sendInitialWorldData(session);
 
@@ -247,6 +251,14 @@ class EnhancedConnectionHandler {
 
     // Unregister from Keep Alive tracking
     PlayHandler.unregisterFromKeepAlive(_socket);
+
+    // Unregister from chat broadcasting
+    if (_playerUsername != null) {
+      final session = _sessionManager.getByUsername(_playerUsername!);
+      if (session != null) {
+        ChatBroadcaster.unregisterPlayer(session.uuid);
+      }
+    }
 
     // Clean up player session if exists
     if (_playerUsername != null) {

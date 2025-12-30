@@ -1,6 +1,8 @@
 /// Minecraft protocol version numbers.
 ///
 /// Maps game versions to their protocol version numbers.
+// ignore_for_file: constant_identifier_names
+
 class ProtocolVersion {
   ProtocolVersion._();
 
@@ -15,6 +17,9 @@ class ProtocolVersion {
 
   /// Protocol version for Minecraft 1.20.6
   static const int v1_20_6 = 766;
+
+  /// Protocol version for Minecraft 1.20.6 (alternative - 769)
+  static const int v1_20_6_alt = 769;
 
   /// Protocol version for Minecraft 1.20.1
   static const int v1_20_1 = 763;
@@ -36,6 +41,7 @@ class ProtocolVersion {
       case v1_21:
         return '1.21';
       case v1_20_6:
+      case v1_20_6_alt:
         return '1.20.6';
       case v1_20_4:
         return '1.20.4';
