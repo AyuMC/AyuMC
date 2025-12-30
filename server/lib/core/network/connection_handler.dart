@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
-
 import '../protocol/packet.dart';
 import 'buffer/packet_buffer.dart';
 import 'buffer/send_queue.dart';
