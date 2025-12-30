@@ -1,8 +1,6 @@
 import 'dart:typed_data';
-
 import '../../../world/chunk/chunk.dart';
 import '../../var_int.dart';
-
 import '../../protocol_registry.dart';
 
 /// Chunk Data and Update Light packet (Clientbound).
