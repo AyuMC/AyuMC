@@ -1,26 +1,30 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
-
 import '../connection/connection_state.dart';
 import '../protocol/packet.dart';
 import '../protocol/packet_ids.dart';
 import '../protocol/packets/handshake/handshake_packet.dart';
+import '../protocol/packets/login/login_start_packet.dart';
+import '../session/session_manager.dart';
 import 'buffer/packet_buffer.dart';
 import 'buffer/send_queue.dart';
 import 'packet_processor.dart';
 
 /// Enhanced connection handler with state management and optimizations.
 ///
-/// Manages connection state transitions and routes packets accordingly.
+/// Manages connection state transitions, player sessions, and routes packets
+/// with ultra-low overhead for maximum performance.
 class EnhancedConnectionHandler {
   final Socket _socket;
   final PacketBuffer _receiveBuffer;
   final SendQueue _sendQueue;
+  final SessionManager _sessionManager = SessionManager();
   Timer? _processTimer;
   bool _isClosed = false;
 
   ConnectionState _connectionState = ConnectionState.handshake;
+  String? _playerUsername;
 
   Function()? onClose;
 
@@ -83,6 +87,13 @@ class EnhancedConnectionHandler {
         return true;
       }
 
+      // For login packets, track session after processing
+      if (_connectionState == ConnectionState.login &&
+          packet.id == PacketIds.loginStart) {
+        _handleLoginPacket(packet);
+        return true;
+      }
+
       // Process packet based on current state
       PacketProcessor.process(
         packet,
@@ -100,9 +111,39 @@ class EnhancedConnectionHandler {
     }
   }
 
+  void _handleLoginPacket(Packet packet) {
+    try {
+      // Parse the login packet to extract username
+      final loginPacket = LoginStartPacket.parse(packet.data);
+      final username = loginPacket.playerName;
+
+      // Process the login packet through the normal handler
+      PacketProcessor.process(
+        packet,
+        _sendQueue.enqueue,
+        state: _connectionState,
+      );
+
+      // Check if login was successful by verifying session exists
+      final session = _sessionManager.getByUsername(username);
+      if (session != null && session.isActive) {
+        _playerUsername = username;
+        _connectionState = ConnectionState.play;
+        print(
+          '[EnhancedConnectionHandler] Player $username '
+          'successfully logged in and transitioned to PLAY state',
+        );
+      }
+    } catch (e) {
+      print('[EnhancedConnectionHandler] Login handling error: $e');
+      _close();
+    }
+  }
+
   void _handleHandshake(Uint8List packetData) {
     try {
-      final handshake = HandshakePacket.parse(packetData);
+      // Use parseRaw because we're passing raw packet data with length/ID
+      final handshake = HandshakePacket.parseRaw(packetData);
       print('[EnhancedConnectionHandler] Handshake: $handshake');
 
       // Transition to the requested state
@@ -133,6 +174,15 @@ class EnhancedConnectionHandler {
   void _close() {
     if (_isClosed) return;
     _isClosed = true;
+
+    // Clean up player session if exists
+    if (_playerUsername != null) {
+      final session = _sessionManager.getByUsername(_playerUsername!);
+      if (session != null) {
+        _sessionManager.removeSession(session.uuid);
+      }
+      _playerUsername = null;
+    }
 
     _processTimer?.cancel();
     _receiveBuffer.clear();

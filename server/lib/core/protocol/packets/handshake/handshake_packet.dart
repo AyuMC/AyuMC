@@ -19,21 +19,50 @@ class HandshakePacket {
     required this.nextState,
   });
 
-  /// Parses a Handshake packet from raw data.
+  /// Parses a Handshake packet from packet payload data.
+  ///
+  /// Note: data should be the packet payload AFTER packet length and ID.
   factory HandshakePacket.parse(Uint8List data) {
     final reader = PacketReader(data);
 
-    // Skip packet length and packet ID
-    reader.readVarInt(); // length
-    reader.readVarInt(); // packet ID
-
-    // Read handshake data
+    // Read handshake data directly (no length/ID skipping needed)
     final protocolVersion = reader.readVarInt();
     final serverAddress = reader.readString();
     final serverPort = reader.readUnsignedShort();
     final nextStateId = reader.readVarInt();
 
     // Map next state ID to ConnectionState
+    ConnectionState nextState;
+    switch (nextStateId) {
+      case 1:
+        nextState = ConnectionState.status;
+        break;
+      case 2:
+        nextState = ConnectionState.login;
+        break;
+      default:
+        nextState = ConnectionState.handshake;
+    }
+
+    return HandshakePacket(
+      protocolVersion: protocolVersion,
+      serverAddress: serverAddress,
+      serverPort: serverPort,
+      nextState: nextState,
+    );
+  }
+
+  /// Parses from raw packet data including length and ID (for backward compat).
+  factory HandshakePacket.parseRaw(Uint8List rawData) {
+    final reader = PacketReader(rawData);
+    reader.readVarInt(); // Skip packet length
+    reader.readVarInt(); // Skip packet ID
+
+    final protocolVersion = reader.readVarInt();
+    final serverAddress = reader.readString();
+    final serverPort = reader.readUnsignedShort();
+    final nextStateId = reader.readVarInt();
+
     ConnectionState nextState;
     switch (nextStateId) {
       case 1:

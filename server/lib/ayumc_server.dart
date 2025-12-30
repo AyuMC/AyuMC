@@ -1,10 +1,13 @@
-import 'core/network/tcp_server.dart';
+import 'core/network/high_performance_server.dart';
 
 enum ServerState { stopped, starting, running, stopping, restarting }
 
+/// Main AyuMC Server class with ultra-high performance architecture.
+///
+/// Uses multi-threading, memory pooling, and advanced optimizations.
 class AyuMCServer {
   static ServerState state = ServerState.stopped;
-  static final TcpServer _tcpServer = TcpServer();
+  static final HighPerformanceTcpServer _server = HighPerformanceTcpServer();
 
   static Future<void> start() async {
     if (state == ServerState.running) {
@@ -13,9 +16,10 @@ class AyuMCServer {
 
     state = ServerState.starting;
     print('[Server] Starting AyuMC Server...');
+    print('[Server] Initializing high-performance systems...');
 
     try {
-      await _tcpServer.start();
+      await _server.start();
       state = ServerState.running;
       print('[Server] AyuMC Server started successfully');
     } catch (e) {
@@ -33,7 +37,7 @@ class AyuMCServer {
     state = ServerState.stopping;
     print('[Server] Stopping AyuMC Server...');
 
-    await _tcpServer.stop();
+    await _server.stop();
     state = ServerState.stopped;
 
     print('[Server] AyuMC Server stopped');
@@ -46,5 +50,10 @@ class AyuMCServer {
     await stop();
     await Future.delayed(const Duration(milliseconds: 500));
     await start();
+  }
+
+  /// Returns comprehensive server statistics.
+  static Map<String, dynamic> getStatistics() {
+    return _server.getStatistics();
   }
 }
