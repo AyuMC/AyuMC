@@ -11,9 +11,6 @@ abstract class LogRepository {
   /// Returns all logs currently in memory.
   List<ServerLog> getAllLogs();
 
-  /// Clears all logs from memory.
-  void clearLogs();
-
   /// Returns logs filtered by level.
   List<ServerLog> getLogsByLevel(LogLevel level);
 }

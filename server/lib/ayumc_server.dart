@@ -72,6 +72,11 @@ class AyuMCServer {
     return _logger.logStream;
   }
 
+  /// Returns all buffered server log entries (historical logs).
+  static List<ServerLogEntry> getAllLogs() {
+    return _logger.getAllLogs();
+  }
+
   /// Logs a message to the server logger.
   static void log(ServerLogLevel level, String source, String message) {
     switch (level) {

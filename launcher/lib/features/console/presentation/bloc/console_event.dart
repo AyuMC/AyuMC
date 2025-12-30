@@ -25,11 +25,6 @@ class ConsoleLogReceived extends ConsoleEvent {
   List<Object?> get props => [log];
 }
 
-/// Event to clear all logs.
-class ConsoleClearLogs extends ConsoleEvent {
-  const ConsoleClearLogs();
-}
-
 /// Event to filter logs by level.
 class ConsoleFilterByLevel extends ConsoleEvent {
   final LogLevel? level;

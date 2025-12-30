@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:isolate';
+import '../../logging/server_logger.dart';
 
 /// A high-performance pool of worker isolates for parallel task execution.
 ///
@@ -23,6 +24,7 @@ class IsolateWorkerPool {
   int _nextWorkerIndex = 0;
   bool _isInitialized = false;
 
+  static final ServerLogger _logger = ServerLogger();
   static const int kDefaultWorkerCount = 4;
   static const int kMaxWorkerCount = 16;
 
@@ -41,7 +43,7 @@ class IsolateWorkerPool {
     }
 
     _isInitialized = true;
-    print('[IsolateWorkerPool] Initialized with $count workers');
+    _logger.info('IsolateWorkerPool', 'Initialized with $count workers');
   }
 
   int _calculateOptimalWorkerCount(int? requested) {
@@ -84,7 +86,7 @@ class IsolateWorkerPool {
     }
     _workers.clear();
     _isInitialized = false;
-    print('[IsolateWorkerPool] Shutdown complete');
+    _logger.info('IsolateWorkerPool', 'Shutdown complete');
   }
 }
 

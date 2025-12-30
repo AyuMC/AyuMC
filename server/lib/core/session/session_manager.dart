@@ -1,5 +1,5 @@
 import 'dart:collection';
-
+import '../logging/server_logger.dart';
 import 'player_session.dart';
 
 /// Manages all active player sessions with optimized data structures.
@@ -17,6 +17,8 @@ class SessionManager {
 
   static const int kMaxSessions = 5000;
 
+  static final ServerLogger _logger = ServerLogger();
+
   /// Adds a new player session.
   ///
   /// Returns false if the session limit is reached.
@@ -28,8 +30,9 @@ class SessionManager {
     _sessionsByUuid[session.uuid] = session;
     _sessionsByUsername[session.username.toLowerCase()] = session;
 
-    print(
-      '[SessionManager] Player joined: ${session.username} (${_sessionsByUuid.length} online)',
+    _logger.info(
+      'SessionManager',
+      'Player joined: ${session.username} (${_sessionsByUuid.length} online)',
     );
     return true;
   }
@@ -40,8 +43,9 @@ class SessionManager {
     if (session != null) {
       _sessionsByUsername.remove(session.username.toLowerCase());
       session.deactivate();
-      print(
-        '[SessionManager] Player left: ${session.username} (${_sessionsByUuid.length} online)',
+      _logger.info(
+        'SessionManager',
+        'Player left: ${session.username} (${_sessionsByUuid.length} online)',
       );
     }
   }

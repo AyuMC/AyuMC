@@ -1,5 +1,5 @@
 import 'dart:io';
-
+import '../../logging/server_logger.dart';
 import '../enhanced_connection_handler.dart';
 
 /// A load-balanced pool for managing client connections across worker groups.
@@ -23,6 +23,8 @@ class ConnectionWorkerPool {
   static const int kWorkerCount = 4;
   static const int kMaxConnectionsPerWorker = 1250;
 
+  static final ServerLogger _logger = ServerLogger();
+
   ConnectionWorkerPool() {
     _initializeWorkers();
   }
@@ -33,7 +35,10 @@ class ConnectionWorkerPool {
       _workerLoads.add(0);
     }
 
-    print('[ConnectionWorkerPool] Initialized with $kWorkerCount workers');
+    _logger.info(
+      'ConnectionWorkerPool',
+      'Initialized with $kWorkerCount workers',
+    );
   }
 
   /// Adds a new connection to the least-loaded worker group.

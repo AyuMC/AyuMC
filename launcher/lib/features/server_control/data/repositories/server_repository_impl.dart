@@ -1,40 +1,8 @@
-import 'dart:async';
 import 'package:ayumc_server/server.dart';
-import '../../../console/data/repositories/log_repository_impl.dart';
-import '../../../console/domain/entities/server_log.dart';
 import '../../domain/entities/server_status.dart';
 import '../../domain/repositories/server_repository.dart';
 
 class ServerRepositoryImpl implements ServerRepository {
-  StreamSubscription? _logSubscription;
-  final LogRepositoryImpl _logRepository = LogRepositoryImpl();
-
-  ServerRepositoryImpl() {
-    _startLogCapture();
-  }
-
-  void _startLogCapture() {
-    _logSubscription = AyuMCServer.getLogStream().listen((entry) {
-      final log = ServerLog(
-        timestamp: entry.timestamp,
-        level: _convertLogLevel(entry.level),
-        source: entry.source,
-        message: entry.message,
-      );
-      _logRepository.addLog(log);
-    });
-  }
-
-  LogLevel _convertLogLevel(ServerLogLevel serverLevel) {
-    return switch (serverLevel) {
-      ServerLogLevel.debug => LogLevel.debug,
-      ServerLogLevel.info => LogLevel.info,
-      ServerLogLevel.warning => LogLevel.warning,
-      ServerLogLevel.error => LogLevel.error,
-      ServerLogLevel.critical => LogLevel.critical,
-    };
-  }
-
   @override
   Future<void> startServer() async {
     try {
@@ -83,10 +51,5 @@ class ServerRepositoryImpl implements ServerRepository {
         yield const ServerStatus.starting();
         break;
     }
-  }
-
-  /// Disposes resources.
-  void dispose() {
-    _logSubscription?.cancel();
   }
 }

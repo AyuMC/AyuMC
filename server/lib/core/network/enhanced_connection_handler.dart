@@ -11,6 +11,7 @@ import '../session/session_manager.dart';
 import 'buffer/packet_buffer.dart';
 import 'buffer/send_queue.dart';
 import 'packet_processor.dart';
+import 'utils/network_logger.dart';
 
 /// Enhanced connection handler with state management and optimizations.
 ///
@@ -105,7 +106,10 @@ class EnhancedConnectionHandler {
       return true;
     } catch (e) {
       if (!_isClosed) {
-        print('[EnhancedConnectionHandler] Packet processing error: $e');
+        NetworkLogger.error(
+          'EnhancedConnectionHandler',
+          'Packet processing error: $e',
+        );
         _close();
       }
       return false;
@@ -141,13 +145,13 @@ class EnhancedConnectionHandler {
         );
         _sendQueue.enqueue(joinGamePacket);
 
-        print(
-          '[EnhancedConnectionHandler] Player $username '
-          'joined the game (Entity ID: $entityId)',
+        NetworkLogger.info(
+          'EnhancedConnectionHandler',
+          'Player $username joined the game (Entity ID: $entityId)',
         );
       }
     } catch (e) {
-      print('[EnhancedConnectionHandler] Login handling error: $e');
+      NetworkLogger.error('EnhancedConnectionHandler', 'Login error: $e');
       _close();
     }
   }
@@ -156,28 +160,29 @@ class EnhancedConnectionHandler {
     try {
       // Use parseRaw because we're passing raw packet data with length/ID
       final handshake = HandshakePacket.parseRaw(packetData);
-      print('[EnhancedConnectionHandler] Handshake: $handshake');
+      NetworkLogger.debug('EnhancedConnectionHandler', 'Handshake: $handshake');
 
       // Transition to the requested state
       _connectionState = handshake.nextState;
     } catch (e) {
-      print('[EnhancedConnectionHandler] Handshake error: $e');
+      NetworkLogger.error('EnhancedConnectionHandler', 'Handshake error: $e');
       _close();
     }
   }
 
   void _onError(Object error) {
     if (!_isClosed) {
-      print('[EnhancedConnectionHandler] Socket error: $error');
+      NetworkLogger.error('EnhancedConnectionHandler', 'Socket error: $error');
       _close();
     }
   }
 
   void _onDone() {
     if (!_isClosed) {
-      print(
-        '[EnhancedConnectionHandler] Client disconnected: '
-        '${_socket.remoteAddress.address}:${_socket.remotePort}',
+      NetworkLogger.debug(
+        'EnhancedConnectionHandler',
+        'Client disconnected: ${_socket.remoteAddress.address}:'
+            '${_socket.remotePort}',
       );
       _close();
     }

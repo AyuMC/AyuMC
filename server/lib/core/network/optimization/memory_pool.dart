@@ -1,5 +1,6 @@
 import 'dart:collection';
 import 'dart:typed_data';
+import '../../logging/server_logger.dart';
 
 /// A high-performance memory pool for buffer reuse and allocation optimization.
 ///
@@ -18,6 +19,7 @@ import 'dart:typed_data';
 /// ```
 class BufferMemoryPool {
   static final BufferMemoryPool _instance = BufferMemoryPool._internal();
+  static final ServerLogger _logger = ServerLogger();
 
   /// Returns the singleton instance of the memory pool.
   factory BufferMemoryPool() => _instance;
@@ -38,7 +40,7 @@ class BufferMemoryPool {
     _createPool(kMediumBufferSize, 30);
     _createPool(kLargeBufferSize, 20);
 
-    print('[BufferMemoryPool] Initialized with optimized buffer pools');
+    _logger.info('BufferMemoryPool', 'Initialized with optimized buffer pools');
   }
 
   void _createPool(int size, int initialCount) {

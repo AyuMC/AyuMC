@@ -1,7 +1,5 @@
 import 'dart:ui';
-
 import 'package:flutter/material.dart';
-
 import '../../../domain/entities/server_log.dart';
 
 /// Builder for the console toolbar with filters and actions.
@@ -10,7 +8,6 @@ class ConsoleToolbarBuilder {
 
   /// Builds the console toolbar with glassmorphism effect.
   static Widget build({
-    required VoidCallback onClear,
     required Function(LogLevel?) onFilterChanged,
     required Function(String) onSearch,
     LogLevel? currentFilter,
@@ -38,28 +35,12 @@ class ConsoleToolbarBuilder {
           ),
           child: Row(
             children: [
-              _buildClearButton(onClear),
-              const SizedBox(width: 12),
               _buildFilterDropdown(onFilterChanged, currentFilter),
               const SizedBox(width: 12),
               Expanded(child: _buildSearchField(onSearch)),
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  static Widget _buildClearButton(VoidCallback onClear) {
-    return ElevatedButton.icon(
-      onPressed: onClear,
-      icon: const Icon(Icons.clear_all, size: 16),
-      label: const Text('Clear'),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.red[700],
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        minimumSize: Size.zero,
       ),
     );
   }

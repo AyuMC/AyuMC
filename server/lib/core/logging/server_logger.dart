@@ -27,9 +27,10 @@ class ServerLogEntry {
   }
 }
 
-/// Server-side logger with broadcast stream support.
+/// Server-side logger with broadcast stream support and log buffering.
 ///
-/// Captures all server logs and broadcasts them to listeners (e.g., Launcher UI).
+/// Captures all server logs, stores them in memory, and broadcasts them
+/// to listeners (e.g., Launcher UI). Supports retrieving historical logs.
 class ServerLogger {
   static final ServerLogger _instance = ServerLogger._internal();
   factory ServerLogger() => _instance;
@@ -37,9 +38,15 @@ class ServerLogger {
 
   final StreamController<ServerLogEntry> _logController =
       StreamController.broadcast();
+  final List<ServerLogEntry> _logBuffer = [];
+
+  static const int kMaxBufferSize = 10000;
 
   /// Returns a stream of log entries.
   Stream<ServerLogEntry> get logStream => _logController.stream;
+
+  /// Returns all buffered log entries.
+  List<ServerLogEntry> getAllLogs() => List.unmodifiable(_logBuffer);
 
   /// Logs a debug message.
   void debug(String source, String message) {
@@ -73,6 +80,12 @@ class ServerLogger {
       source: source,
       message: message,
     );
+
+    // Add to buffer (with size limit)
+    _logBuffer.add(entry);
+    if (_logBuffer.length > kMaxBufferSize) {
+      _logBuffer.removeAt(0);
+    }
 
     // Print to console
     print(entry.toString());

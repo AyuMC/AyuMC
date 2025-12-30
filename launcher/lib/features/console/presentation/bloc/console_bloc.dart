@@ -19,7 +19,6 @@ class ConsoleBloc extends Bloc<ConsoleEvent, ConsoleState> {
       super(const ConsoleState()) {
     on<ConsoleStartListening>(_onStartListening);
     on<ConsoleLogReceived>(_onLogReceived);
-    on<ConsoleClearLogs>(_onClearLogs);
     on<ConsoleFilterByLevel>(_onFilterByLevel);
     on<ConsoleSearchLogs>(_onSearchLogs);
   }
@@ -30,8 +29,19 @@ class ConsoleBloc extends Bloc<ConsoleEvent, ConsoleState> {
   ) async {
     if (state.isListening) return;
 
-    emit(state.copyWith(isListening: true));
+    // First, load all existing logs from repository
+    final existingLogs = _logRepository.getAllLogs();
+    final filtered = _applyFilters(existingLogs);
 
+    emit(
+      state.copyWith(
+        isListening: true,
+        logs: existingLogs,
+        filteredLogs: filtered,
+      ),
+    );
+
+    // Then start listening for new logs
     _logSubscription = _logRepository.getLogStream().listen(
       (log) => add(ConsoleLogReceived(log)),
     );
@@ -42,11 +52,6 @@ class ConsoleBloc extends Bloc<ConsoleEvent, ConsoleState> {
     final filtered = _applyFilters(updatedLogs);
 
     emit(state.copyWith(logs: updatedLogs, filteredLogs: filtered));
-  }
-
-  void _onClearLogs(ConsoleClearLogs event, Emitter<ConsoleState> emit) {
-    _logRepository.clearLogs();
-    emit(state.copyWith(logs: [], filteredLogs: []));
   }
 
   void _onFilterByLevel(

@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-
 import '../../domain/entities/server_log.dart';
-import '../../domain/repositories/log_repository.dart';
 import '../bloc/console_bloc.dart';
 import '../bloc/console_event.dart';
 import '../bloc/console_state.dart';
@@ -16,9 +14,7 @@ import '../utils/console_scroll_manager.dart';
 /// Clean, professional implementation with separated concerns.
 /// All logic is managed by BLoC, UI is purely presentational.
 class ConsolePage extends StatefulWidget {
-  final LogRepository logRepository;
-
-  const ConsolePage({super.key, required this.logRepository});
+  const ConsolePage({super.key});
 
   @override
   State<ConsolePage> createState() => _ConsolePageState();
@@ -41,44 +37,35 @@ class _ConsolePageState extends State<ConsolePage> {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (context) =>
-          ConsoleBloc(logRepository: widget.logRepository)
-            ..add(const ConsoleStartListening()),
-      child: BlocConsumer<ConsoleBloc, ConsoleState>(
-        listener: (context, state) {
-          _scrollManager.handleNewLogs(state.logs.length);
-        },
-        builder: (context, state) {
-          final logsToDisplay = _getDisplayedLogs(state);
-
-          return Column(
-            children: [
-              ConsoleToolbarBuilder.build(
-                onClear: () =>
-                    context.read<ConsoleBloc>().add(const ConsoleClearLogs()),
-                onFilterChanged: (level) => context.read<ConsoleBloc>().add(
-                  ConsoleFilterByLevel(level),
-                ),
-                onSearch: (query) =>
-                    context.read<ConsoleBloc>().add(ConsoleSearchLogs(query)),
-                currentFilter: state.filterLevel,
+    return BlocConsumer<ConsoleBloc, ConsoleState>(
+      listener: (context, state) {
+        _scrollManager.handleNewLogs(state.logs.length);
+      },
+      builder: (context, state) {
+        final logsToDisplay = _getDisplayedLogs(state);
+        return Column(
+          children: [
+            ConsoleToolbarBuilder.build(
+              onFilterChanged: (level) =>
+                  context.read<ConsoleBloc>().add(ConsoleFilterByLevel(level)),
+              onSearch: (query) =>
+                  context.read<ConsoleBloc>().add(ConsoleSearchLogs(query)),
+              currentFilter: state.filterLevel,
+            ),
+            Expanded(
+              child: ConsoleContentBuilder.buildLogsList(
+                logs: logsToDisplay,
+                scrollController: _scrollManager.scrollController,
               ),
-              Expanded(
-                child: ConsoleContentBuilder.buildLogsList(
-                  logs: logsToDisplay,
-                  scrollController: _scrollManager.scrollController,
-                ),
-              ),
-              ConsoleStatusBarBuilder.build(
-                logCount: state.logs.length,
-                autoScroll: _scrollManager.autoScroll,
-                onAutoScrollChanged: _scrollManager.setAutoScroll,
-              ),
-            ],
-          );
-        },
-      ),
+            ),
+            ConsoleStatusBarBuilder.build(
+              logCount: state.logs.length,
+              autoScroll: _scrollManager.autoScroll,
+              onAutoScrollChanged: _scrollManager.setAutoScroll,
+            ),
+          ],
+        );
+      },
     );
   }
 

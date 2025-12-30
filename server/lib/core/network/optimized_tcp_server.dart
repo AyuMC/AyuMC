@@ -1,11 +1,11 @@
 import 'dart:io';
-
 import '../constants/network_constants.dart';
 import 'optimization/adaptive_scheduler.dart';
 import 'optimization/connection_pool.dart';
 import 'optimization/isolate_pool.dart';
 import 'optimization/memory_pool.dart';
 import 'optimization/network_statistics.dart';
+import 'utils/network_logger.dart';
 
 /// A high-performance TCP server optimized for handling thousands of
 /// concurrent connections.
@@ -42,7 +42,7 @@ class HighPerformanceTcpServer {
   /// Throws [SocketException] if the port is already in use.
   Future<void> start({int port = NetworkConstants.defaultPort}) async {
     if (_isRunning) {
-      print('[HighPerformanceTcpServer] Already running');
+      NetworkLogger.info('HighPerformanceTcpServer', 'Already running');
       return;
     }
 
@@ -58,7 +58,7 @@ class HighPerformanceTcpServer {
     _scheduler.start();
 
     _isRunning = true;
-    print('[HighPerformanceTcpServer] Started on port $port');
+    NetworkLogger.info('HighPerformanceTcpServer', 'Started on port $port');
     _printOptimizationStatus();
   }
 
@@ -66,7 +66,10 @@ class HighPerformanceTcpServer {
     await _isolatePool.initialize(workerCount: 4);
     _memoryPool.initialize();
 
-    print('[HighPerformanceTcpServer] All optimizations initialized');
+    NetworkLogger.info(
+      'HighPerformanceTcpServer',
+      'All optimizations initialized',
+    );
   }
 
   void _startListening() {
@@ -83,10 +86,10 @@ class HighPerformanceTcpServer {
     final workerIndex = _connectionPool.addConnection(socket);
     _statistics.recordConnectionOpened();
 
-    print(
-      '[HighPerformanceTcpServer] Client connected: '
-      '${socket.remoteAddress.address}:${socket.remotePort} '
-      '-> Worker $workerIndex',
+    NetworkLogger.info(
+      'HighPerformanceTcpServer',
+      'Client connected: ${socket.remoteAddress.address}:'
+          '${socket.remotePort} -> Worker $workerIndex',
     );
   }
 
@@ -95,7 +98,7 @@ class HighPerformanceTcpServer {
   }
 
   void _handleError(Object error) {
-    print('[HighPerformanceTcpServer] Error: $error');
+    NetworkLogger.error('HighPerformanceTcpServer', 'Error: $error');
   }
 
   void _printOptimizationStatus() {
@@ -128,7 +131,7 @@ class HighPerformanceTcpServer {
   /// Stops the server and shuts down all optimization systems.
   Future<void> stop() async {
     if (!_isRunning) {
-      print('[HighPerformanceTcpServer] Not running');
+      NetworkLogger.info('HighPerformanceTcpServer', 'Not running');
       return;
     }
 
@@ -138,6 +141,6 @@ class HighPerformanceTcpServer {
     await _isolatePool.shutdown();
 
     _isRunning = false;
-    print('[HighPerformanceTcpServer] Stopped');
+    NetworkLogger.info('HighPerformanceTcpServer', 'Stopped');
   }
 }
