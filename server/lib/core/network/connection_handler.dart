@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
+
+import '../protocol/packet.dart';
 import 'buffer/packet_buffer.dart';
 import 'buffer/send_queue.dart';
 import 'packet_processor.dart';
-import '../protocol/packet.dart';
 
 class ConnectionHandler {
   final Socket _socket;
@@ -47,21 +49,29 @@ class ConnectionHandler {
     if (_isClosed) return;
 
     int processed = 0;
-    const maxPerCycle = 50;
+    const kMaxPerCycle = 50;
 
-    while (processed < maxPerCycle) {
+    while (processed < kMaxPerCycle && !_isClosed) {
       final packetData = _receiveBuffer.tryReadPacket();
       if (packetData == null) break;
 
-      try {
-        final packet = Packet.fromBytes(packetData);
-        PacketProcessor.process(packet, _sendQueue.enqueue);
-        processed++;
-      } catch (e) {
-        print('[Network] Packet processing error: $e');
-        _close();
+      if (!_processSinglePacket(packetData)) {
         return;
       }
+      processed++;
+    }
+  }
+
+  bool _processSinglePacket(Uint8List packetData) {
+    try {
+      final packet = Packet.fromBytes(packetData);
+      PacketProcessor.process(packet, _sendQueue.enqueue);
+      return true;
+    } catch (e) {
+      if (!_isClosed) {
+        _close();
+      }
+      return false;
     }
   }
 

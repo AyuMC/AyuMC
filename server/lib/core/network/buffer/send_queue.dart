@@ -1,19 +1,22 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+
 import '../../protocol/packet.dart';
+import '../utils/connection_error_handler.dart';
 
 class SendQueue {
   final Socket _socket;
   final List<Uint8List> _queue = [];
   bool _isSending = false;
-  static const int _batchSize = 10;
-  static const int _maxQueueSize = 1000;
+  bool _isClosed = false;
+  static const int _kBatchSize = 10;
+  static const int _kMaxQueueSize = 1000;
 
   SendQueue(this._socket);
 
   void enqueue(Packet packet) {
-    if (_queue.length >= _maxQueueSize) {
+    if (_isClosed || _queue.length >= _kMaxQueueSize) {
       return;
     }
 
@@ -26,30 +29,62 @@ class SendQueue {
   }
 
   Future<void> _processQueue() async {
-    if (_queue.isEmpty || _isSending) return;
+    if (_isClosed || _queue.isEmpty || _isSending) return;
 
     _isSending = true;
 
     try {
-      while (_queue.isNotEmpty) {
-        final batch = _queue.length > _batchSize
-            ? _queue.sublist(0, _batchSize)
-            : List<Uint8List>.from(_queue);
-
+      while (_queue.isNotEmpty && !_isClosed) {
+        final batch = _extractBatch();
         _queue.removeRange(0, batch.length);
 
-        final combined = _combineBytes(batch);
-        _socket.add(combined);
+        if (!_sendBatch(batch)) {
+          return;
+        }
 
         if (_queue.isNotEmpty) {
           await Future.delayed(Duration.zero);
         }
       }
     } catch (e) {
-      print('[Network] Send queue error: $e');
+      _handleError(e);
     } finally {
       _isSending = false;
     }
+  }
+
+  List<Uint8List> _extractBatch() {
+    return _queue.length > _kBatchSize
+        ? _queue.sublist(0, _kBatchSize)
+        : List<Uint8List>.from(_queue);
+  }
+
+  bool _sendBatch(List<Uint8List> batch) {
+    try {
+      final combined = _combineBytes(batch);
+      _socket.add(combined);
+      return true;
+    } on SocketException {
+      _closeQueue();
+      return false;
+    } catch (e) {
+      if (ConnectionErrorHandler.isConnectionError(e)) {
+        _closeQueue();
+        return false;
+      }
+      rethrow;
+    }
+  }
+
+  void _handleError(Object error) {
+    if (!_isClosed) {
+      _closeQueue();
+    }
+  }
+
+  void _closeQueue() {
+    _isClosed = true;
+    _queue.clear();
   }
 
   Uint8List _combineBytes(List<Uint8List> batches) {
@@ -69,7 +104,6 @@ class SendQueue {
   }
 
   void clear() {
-    _queue.clear();
+    _closeQueue();
   }
 }
-

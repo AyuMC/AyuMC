@@ -4,10 +4,10 @@ class PacketBuffer {
   Uint8List _data;
   int _readOffset = 0;
   int _writeOffset = 0;
-  static const int _initialSize = 4096;
-  static const int _maxSize = 2097152;
+  static const int _kInitialSize = 4096;
+  static const int _kMaxSize = 2097152;
 
-  PacketBuffer() : _data = Uint8List(_initialSize);
+  PacketBuffer() : _data = Uint8List(_kInitialSize);
 
   int get available => _writeOffset - _readOffset;
   bool get isEmpty => _readOffset >= _writeOffset;
@@ -22,20 +22,21 @@ class PacketBuffer {
   }
 
   void _grow(int needed) {
-    int newSize = _data.length;
-    while (newSize < needed && newSize < _maxSize) {
-      newSize *= 2;
-    }
-    if (newSize > _maxSize) {
-      newSize = _maxSize;
-    }
-
+    final newSize = _calculateNewSize(needed);
     final newData = Uint8List(newSize);
     final available = _writeOffset - _readOffset;
     newData.setRange(0, available, _data, _readOffset);
     _data = newData;
     _writeOffset = available;
     _readOffset = 0;
+  }
+
+  int _calculateNewSize(int needed) {
+    int newSize = _data.length;
+    while (newSize < needed && newSize < _kMaxSize) {
+      newSize *= 2;
+    }
+    return newSize > _kMaxSize ? _kMaxSize : newSize;
   }
 
   Uint8List? tryReadPacket() {
@@ -48,7 +49,7 @@ class PacketBuffer {
     final varIntSize = result.size;
     final totalSize = varIntSize + packetLength;
 
-    if (packetLength > _maxSize || totalSize > available) {
+    if (packetLength > _kMaxSize || totalSize > available) {
       return null;
     }
 
@@ -100,4 +101,3 @@ class _VarIntResult {
 
   _VarIntResult({required this.value, required this.size});
 }
-
