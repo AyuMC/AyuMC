@@ -6,6 +6,7 @@ import '../connection/connection_state.dart';
 import '../handlers/play_handler.dart';
 import '../protocol/packet.dart';
 import '../protocol/packet_ids.dart';
+import '../protocol/protocol_registry.dart';
 import '../protocol/packets/handshake/handshake_packet.dart';
 import '../protocol/packets/login/login_start_packet.dart';
 import '../session/session_manager.dart';
@@ -190,12 +191,27 @@ class EnhancedConnectionHandler {
       x: spawnX,
       y: spawnY,
       z: spawnZ,
+      protocolVersion: session.protocolVersion,
     );
-    _socket.add(spawnPacket.toFramedBytes());
+    _sendQueue.enqueue(
+      Packet(
+        id: ProtocolRegistry.getPacketIds(
+          session.protocolVersion,
+        ).playSetDefaultSpawnPosition,
+        data: spawnPacket.toBytes(),
+      ),
+    );
 
     // Send player position packet
     final posPacket = PlayHandler.createSyncPositionPacket(session, 0);
-    _socket.add(posPacket.toFramedBytes());
+    _sendQueue.enqueue(
+      Packet(
+        id: ProtocolRegistry.getPacketIds(
+          session.protocolVersion,
+        ).playPlayerPosition,
+        data: posPacket.toBytes(),
+      ),
+    );
 
     if (ServerConfig.kEnableChunkStreaming) {
       ChunkSender.sendInitialChunks(

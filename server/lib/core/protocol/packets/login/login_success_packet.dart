@@ -21,8 +21,8 @@ class LoginSuccessPacket {
   Uint8List toBytes() {
     final writer = PacketWriter();
 
-    // Write UUID as string
-    writer.writeString(uuid);
+    // Write UUID as 16 bytes (2 longs: most significant, least significant)
+    writer.writeUuid(uuid);
 
     // Write username
     writer.writeString(username);

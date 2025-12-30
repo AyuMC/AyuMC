@@ -58,6 +58,41 @@ class PacketWriter {
     _buffer.addAll(data.buffer.asUint8List());
   }
 
+  /// Writes a UUID as 16 bytes (most significant bits first, then least significant).
+  ///
+  /// Format: 2 longs (8 bytes each)
+  void writeUuid(String uuidString) {
+    // Parse UUID string: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    final parts = uuidString.split('-');
+    if (parts.length != 5) {
+      throw ArgumentError('Invalid UUID format: $uuidString');
+    }
+
+    // Combine parts into hex string
+    final hexString = parts.join();
+    if (hexString.length != 32) {
+      throw ArgumentError('Invalid UUID format: $uuidString');
+    }
+
+    // Parse as two longs using BigInt to handle large numbers
+    final mostSignificantBig = BigInt.parse(
+      hexString.substring(0, 16),
+      radix: 16,
+    );
+    final leastSignificantBig = BigInt.parse(
+      hexString.substring(16, 32),
+      radix: 16,
+    );
+
+    // Convert BigInt to int64 (signed, but we treat as unsigned)
+    // For most significant: take lower 64 bits
+    final mostSignificant = mostSignificantBig.toUnsigned(64).toInt();
+    final leastSignificant = leastSignificantBig.toUnsigned(64).toInt();
+
+    writeLong(mostSignificant);
+    writeLong(leastSignificant);
+  }
+
   /// Writes a position as a packed 64-bit value.
   ///
   /// X: 26 bits, Z: 26 bits, Y: 12 bits

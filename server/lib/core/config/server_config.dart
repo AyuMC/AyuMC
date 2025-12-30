@@ -8,8 +8,9 @@ class ServerConfig {
 
   /// When true, the server will send initial chunks on join.
   ///
-  /// Enabled for 1.20.4 (protocol 765) with correct packet IDs.
-  static const bool kEnableChunkStreaming = true;
+  /// Temporarily disabled to debug connection issues.
+  /// Will be re-enabled after fixing chunk packet encoding.
+  static const bool kEnableChunkStreaming = false;
 
   /// Default view distance (in chunks) for initial chunk stream.
   static const int kInitialChunkViewDistance = 4;

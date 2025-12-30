@@ -49,7 +49,11 @@ class ChunkSender {
     final centerChunkZ = (playerZ / 16).floor();
 
     // 1. Set Center Chunk
-    final centerPacket = SetCenterChunkPacket(centerChunkX, centerChunkZ);
+    final centerPacket = SetCenterChunkPacket(
+      centerChunkX,
+      centerChunkZ,
+      protocolVersion: protocolVersion,
+    );
     _sendBytes(socket, centerPacket.toFramedBytes());
 
     // 2. Chunk Batch Start

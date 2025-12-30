@@ -174,6 +174,7 @@ class PlayHandler {
       yaw: session.yaw,
       pitch: session.pitch,
       teleportId: teleportId,
+      protocolVersion: session.protocolVersion,
     );
   }
 
@@ -182,7 +183,13 @@ class PlayHandler {
     int x = 0,
     int y = 64,
     int z = 0,
+    int protocolVersion = 765,
   }) {
-    return SetDefaultSpawnPositionPacket(x: x, y: y, z: z);
+    return SetDefaultSpawnPositionPacket(
+      x: x,
+      y: y,
+      z: z,
+      protocolVersion: protocolVersion,
+    );
   }
 }

@@ -152,18 +152,22 @@ class ChunkDataPacket {
 ///
 /// Tells the client which chunk to center rendering on.
 class SetCenterChunkPacket {
-  static const int kPacketId = 0x54;
-
   final int chunkX;
   final int chunkZ;
+  final int protocolVersion;
 
-  const SetCenterChunkPacket(this.chunkX, this.chunkZ);
+  const SetCenterChunkPacket(
+    this.chunkX,
+    this.chunkZ, {
+    this.protocolVersion = 765,
+  });
 
   Uint8List toFramedBytes() {
+    final packetIds = ProtocolRegistry.getPacketIds(protocolVersion);
     final buffer = BytesBuilder(copy: false);
 
     // Packet ID
-    _writeVarInt(buffer, kPacketId);
+    _writeVarInt(buffer, packetIds.playSetCenterChunk);
 
     // Chunk X
     _writeVarInt(buffer, chunkX);
@@ -192,10 +196,12 @@ class SetCenterChunkPacket {
 
 /// Chunk Batch Start packet (Clientbound).
 class ChunkBatchStartPacket {
-  static const int kPacketId = 0x0D;
+  final int protocolVersion;
+  const ChunkBatchStartPacket({this.protocolVersion = 765});
 
   Uint8List toFramedBytes() {
-    final payload = Uint8List.fromList([kPacketId]);
+    final packetIds = ProtocolRegistry.getPacketIds(protocolVersion);
+    final payload = Uint8List.fromList([packetIds.playChunkBatchStart]);
     final lengthBytes = VarInt.encode(payload.length);
 
     final result = Uint8List(lengthBytes.length + payload.length);
@@ -208,16 +214,16 @@ class ChunkBatchStartPacket {
 
 /// Chunk Batch Finished packet (Clientbound).
 class ChunkBatchFinishedPacket {
-  static const int kPacketId = 0x0E;
+  final int protocolVersion;
+  const ChunkBatchFinishedPacket(this.batchSize, {this.protocolVersion = 765});
 
   final int batchSize;
 
-  const ChunkBatchFinishedPacket(this.batchSize);
-
   Uint8List toFramedBytes() {
+    final packetIds = ProtocolRegistry.getPacketIds(protocolVersion);
     final buffer = BytesBuilder(copy: false);
 
-    buffer.addByte(kPacketId);
+    buffer.addByte(packetIds.playChunkBatchFinished);
     _writeVarInt(buffer, batchSize);
 
     final payload = buffer.toBytes();

@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 
-import '../../packet_ids.dart';
 import '../../packet_reader.dart';
 import '../../packet_writer.dart';
 import '../../var_int.dart';
@@ -17,6 +16,7 @@ class SyncPlayerPositionPacket {
   final double pitch;
   final int flags;
   final int teleportId;
+  final int protocolVersion;
 
   const SyncPlayerPositionPacket({
     required this.x,
@@ -26,12 +26,14 @@ class SyncPlayerPositionPacket {
     required this.pitch,
     this.flags = 0,
     this.teleportId = 0,
+    this.protocolVersion = 765,
   });
 
-  /// Builds the packet bytes with minimal allocations.
+  /// Builds the packet payload (without packet ID).
+  ///
+  /// The Packet wrapper will add packet ID and length.
   Uint8List toBytes() {
     final writer = PacketWriter();
-    writer.writeVarInt(PacketIds.playPlayerPosition);
     writer.writeDouble(x);
     writer.writeDouble(y);
     writer.writeDouble(z);
@@ -63,18 +65,21 @@ class SetDefaultSpawnPositionPacket {
   final int y;
   final int z;
   final double angle;
+  final int protocolVersion;
 
   const SetDefaultSpawnPositionPacket({
     required this.x,
     required this.y,
     required this.z,
     this.angle = 0.0,
+    this.protocolVersion = 765,
   });
 
-  /// Builds the packet bytes.
+  /// Builds the packet payload (without packet ID).
+  ///
+  /// The Packet wrapper will add packet ID and length.
   Uint8List toBytes() {
     final writer = PacketWriter();
-    writer.writeVarInt(PacketIds.playSetDefaultSpawnPosition);
     writer.writePosition(x, y, z);
     writer.writeFloat(angle);
     return writer.toBytes();
