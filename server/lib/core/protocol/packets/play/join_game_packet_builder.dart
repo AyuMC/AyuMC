@@ -10,9 +10,6 @@ import '../../var_int.dart';
 class JoinGamePacketBuilder {
   JoinGamePacketBuilder._();
 
-  // Pre-calculated constants for optimal performance
-  static const int _packetId = 0x28;
-
   // Cached dimension data (immutable, shared across all packets)
   static final List<String> _cachedDimensions = [
     'minecraft:overworld',
@@ -27,8 +24,9 @@ class JoinGamePacketBuilder {
     'minecraft:overworld',
   );
 
-  /// Builds a Join Game packet with ultra-low overhead.
+  /// Builds a Join Game packet payload (without packet ID and length).
   ///
+  /// The Packet wrapper will add packet ID and length.
   /// This method uses pre-cached data and efficient buffer operations.
   static Uint8List build({
     required int entityId,
@@ -47,9 +45,6 @@ class JoinGamePacketBuilder {
     bool hasDeathLocation = false,
   }) {
     final writer = PacketWriter();
-
-    // Packet ID
-    writer.writeVarInt(_packetId);
 
     // Entity ID
     writer.writeInt(entityId);
@@ -105,16 +100,7 @@ class JoinGamePacketBuilder {
     // Has Death Location
     writer.writeBool(hasDeathLocation);
 
-    // Get packet data
-    final packetData = writer.toBytes();
-
-    // Prepend packet length
-    final lengthBytes = VarInt.encode(packetData.length);
-    final result = Uint8List(lengthBytes.length + packetData.length);
-    result.setRange(0, lengthBytes.length, lengthBytes);
-    result.setRange(lengthBytes.length, result.length, packetData);
-
-    return result;
+    return writer.toBytes();
   }
 
   /// Pre-encodes a string for efficient reuse.

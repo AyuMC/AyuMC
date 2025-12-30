@@ -3,6 +3,7 @@ import '../network/keep_alive/keep_alive_manager.dart';
 import '../protocol/packet.dart';
 import '../protocol/packet_ids.dart';
 import '../protocol/packet_reader.dart';
+import '../protocol/protocol_registry.dart';
 import '../protocol/packets/play/join_game_packet_builder.dart';
 import '../protocol/packets/play/keep_alive_packet.dart';
 import '../protocol/packets/play/position_packet.dart';
@@ -24,6 +25,7 @@ class PlayHandler {
   /// Uses pre-cached data and efficient buffer operations.
   /// This method is optimized for minimal allocations and maximum throughput.
   static Packet createJoinGamePacket(PlayerSession session, int entityId) {
+    final packetIds = ProtocolRegistry.getPacketIds(session.protocolVersion);
     final data = JoinGamePacketBuilder.build(
       entityId: entityId,
       isHardcore: false,
@@ -41,7 +43,7 @@ class PlayHandler {
       hasDeathLocation: false,
     );
 
-    return Packet(id: 0x28, data: data);
+    return Packet(id: packetIds.playJoinGame, data: data);
   }
 
   /// Generates a unique entity ID for a player.
