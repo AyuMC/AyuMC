@@ -46,5 +46,26 @@ class PacketWriter {
     _buffer.addAll(bytes);
   }
 
+  void writeDouble(double value) {
+    final data = ByteData(8);
+    data.setFloat64(0, value, Endian.big);
+    _buffer.addAll(data.buffer.asUint8List());
+  }
+
+  void writeFloat(double value) {
+    final data = ByteData(4);
+    data.setFloat32(0, value, Endian.big);
+    _buffer.addAll(data.buffer.asUint8List());
+  }
+
+  /// Writes a position as a packed 64-bit value.
+  ///
+  /// X: 26 bits, Z: 26 bits, Y: 12 bits
+  void writePosition(int x, int y, int z) {
+    final packed =
+        ((x & 0x3FFFFFF) << 38) | ((z & 0x3FFFFFF) << 12) | (y & 0xFFF);
+    writeLong(packed);
+  }
+
   Uint8List toBytes() => Uint8List.fromList(_buffer);
 }

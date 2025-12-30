@@ -11,6 +11,14 @@ class PlayerSession {
   ConnectionState _state;
   bool _isActive;
 
+  // Player position (ultra-compact storage)
+  double x = 0.0;
+  double y = 64.0; // Default spawn height
+  double z = 0.0;
+  double yaw = 0.0;
+  double pitch = 0.0;
+  bool onGround = true;
+
   PlayerSession({
     required this.uuid,
     required this.username,

@@ -25,8 +25,16 @@ class PacketIds {
   static const int loginCompression = 0x03;
   static const int loginPluginRequest = 0x04;
 
-  /// Play packets (examples - to be expanded)
-  static const int playJoinGame = 0x26;
-  static const int playKeepAlive = 0x21;
-  static const int playDisconnect = 0x1A;
+  /// Play packets - Clientbound (server to client)
+  static const int playJoinGame = 0x28;
+  static const int playKeepAliveClientbound = 0x27;
+  static const int playDisconnect = 0x1D;
+  static const int playPlayerPosition = 0x40;
+  static const int playSetDefaultSpawnPosition = 0x56;
+  static const int playGameEvent = 0x22;
+
+  /// Play packets - Serverbound (client to server)
+  static const int playKeepAliveServerbound = 0x18;
+  static const int playPlayerPositionServerbound = 0x1A;
+  static const int playChatMessage = 0x06;
 }

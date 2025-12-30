@@ -35,6 +35,20 @@ class PacketReader {
     return value;
   }
 
+  double readDouble() {
+    final bytes = _data.sublist(_offset, _offset + 8);
+    final byteData = ByteData.view(Uint8List.fromList(bytes).buffer);
+    _offset += 8;
+    return byteData.getFloat64(0, Endian.big);
+  }
+
+  double readFloat() {
+    final bytes = _data.sublist(_offset, _offset + 4);
+    final byteData = ByteData.view(Uint8List.fromList(bytes).buffer);
+    _offset += 4;
+    return byteData.getFloat32(0, Endian.big);
+  }
+
   bool readBool() {
     final value = _data[_offset] != 0;
     _offset++;

@@ -1,5 +1,12 @@
+import 'dart:io';
+import '../logging/server_logger.dart';
+import '../network/keep_alive/keep_alive_manager.dart';
 import '../protocol/packet.dart';
+import '../protocol/packet_ids.dart';
+import '../protocol/packet_reader.dart';
 import '../protocol/packets/play/join_game_packet_builder.dart';
+import '../protocol/packets/play/keep_alive_packet.dart';
+import '../protocol/packets/play/position_packet.dart';
 import '../session/player_session.dart';
 
 /// Ultra-optimized Play protocol handler.
@@ -8,6 +15,9 @@ import '../session/player_session.dart';
 /// Designed for 5000+ concurrent players with multi-threaded processing.
 class PlayHandler {
   PlayHandler._();
+
+  static final ServerLogger _logger = ServerLogger();
+  static const String _tag = 'PlayHandler';
 
   // Entity ID generator (atomic counter for thread safety)
   static int _nextEntityId = 1;
@@ -44,53 +54,130 @@ class PlayHandler {
     return _nextEntityId++;
   }
 
+  /// Registers a player connection for Keep Alive tracking.
+  static void registerForKeepAlive(Socket socket) {
+    KeepAliveManager().registerConnection(socket);
+  }
+
+  /// Unregisters a player from Keep Alive tracking.
+  static void unregisterFromKeepAlive(Socket socket) {
+    KeepAliveManager().unregisterConnection(socket);
+  }
+
   /// Handles incoming play packets with optimized routing.
   ///
   /// Routes packets to specialized handlers based on packet ID.
   /// Uses jump table for O(1) packet dispatch.
   static void handlePacket(
     Packet packet,
+    Socket socket,
     void Function(Packet) sendResponse,
     PlayerSession session,
   ) {
     // Fast packet routing using packet ID
     switch (packet.id) {
+      case PacketIds.playKeepAliveServerbound:
+        _handleKeepAlive(packet, socket);
+        break;
       case 0x00: // Teleport Confirm
         _handleTeleportConfirm(packet, session);
         break;
-      case 0x14: // Player Position
+      case PacketIds.playPlayerPositionServerbound:
         _handlePlayerPosition(packet, session);
         break;
-      case 0x15: // Player Position and Rotation
+      case 0x1B: // Player Position and Rotation
         _handlePlayerPositionRotation(packet, session);
         break;
-      case 0x16: // Player Rotation
+      case 0x1C: // Player Rotation
         _handlePlayerRotation(packet, session);
         break;
+      case PacketIds.playChatMessage:
+        _handleChatMessage(packet, session);
+        break;
       default:
-        // Unknown packet - log for debugging
-        print(
-          '[PlayHandler] Unknown play packet: 0x${packet.id.toRadixString(16).padLeft(2, '0')}',
-        );
+        // Ignore unknown packets (reduces log spam)
+        break;
     }
   }
 
+  /// Handles Keep Alive response from client.
+  static void _handleKeepAlive(Packet packet, Socket socket) {
+    final keepAlivePacket = KeepAliveServerboundPacket.parse(packet.data);
+    KeepAliveManager().onKeepAliveReceived(socket, keepAlivePacket.keepAliveId);
+  }
+
+  /// Handles chat messages from client.
+  static void _handleChatMessage(Packet packet, PlayerSession session) {
+    // TODO: Implement chat message handling
+    _logger.debug(_tag, 'Chat from ${session.username}');
+  }
+
   static void _handleTeleportConfirm(Packet packet, PlayerSession session) {
-    // TODO: Implement teleport confirmation
+    // Teleport confirmed - no action needed for basic implementation
   }
 
+  /// Handles player position update with ultra-low overhead.
   static void _handlePlayerPosition(Packet packet, PlayerSession session) {
-    // TODO: Implement player position update
+    final posPacket = PlayerPositionServerboundPacket.parse(packet.data);
+
+    // Direct field update - minimal overhead
+    session.x = posPacket.x;
+    session.y = posPacket.y;
+    session.z = posPacket.z;
+    session.onGround = posPacket.onGround;
   }
 
+  /// Handles player position + rotation update.
   static void _handlePlayerPositionRotation(
     Packet packet,
     PlayerSession session,
   ) {
-    // TODO: Implement player position + rotation update
+    final posPacket = PlayerPositionRotationServerboundPacket.parse(
+      packet.data,
+    );
+
+    // Direct field update - minimal overhead
+    session.x = posPacket.x;
+    session.y = posPacket.y;
+    session.z = posPacket.z;
+    session.yaw = posPacket.yaw;
+    session.pitch = posPacket.pitch;
+    session.onGround = posPacket.onGround;
   }
 
+  /// Handles player rotation update.
   static void _handlePlayerRotation(Packet packet, PlayerSession session) {
-    // TODO: Implement player rotation update
+    // Read rotation from packet data directly
+    // Format: Float (yaw) + Float (pitch) + Bool (onGround)
+    if (packet.data.length >= 9) {
+      final reader = PacketReader(packet.data);
+      session.yaw = reader.readFloat();
+      session.pitch = reader.readFloat();
+      session.onGround = reader.readBool();
+    }
+  }
+
+  /// Creates a Sync Player Position packet.
+  static SyncPlayerPositionPacket createSyncPositionPacket(
+    PlayerSession session,
+    int teleportId,
+  ) {
+    return SyncPlayerPositionPacket(
+      x: session.x,
+      y: session.y,
+      z: session.z,
+      yaw: session.yaw,
+      pitch: session.pitch,
+      teleportId: teleportId,
+    );
+  }
+
+  /// Creates a Set Default Spawn Position packet.
+  static SetDefaultSpawnPositionPacket createSpawnPositionPacket({
+    int x = 0,
+    int y = 64,
+    int z = 0,
+  }) {
+    return SetDefaultSpawnPositionPacket(x: x, y: y, z: z);
   }
 }

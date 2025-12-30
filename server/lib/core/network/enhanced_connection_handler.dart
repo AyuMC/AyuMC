@@ -145,6 +145,9 @@ class EnhancedConnectionHandler {
         );
         _sendQueue.enqueue(joinGamePacket);
 
+        // Register for Keep Alive tracking
+        PlayHandler.registerForKeepAlive(_socket);
+
         NetworkLogger.info(
           'EnhancedConnectionHandler',
           'Player $username joined the game (Entity ID: $entityId)',
@@ -191,6 +194,9 @@ class EnhancedConnectionHandler {
   void _close() {
     if (_isClosed) return;
     _isClosed = true;
+
+    // Unregister from Keep Alive tracking
+    PlayHandler.unregisterFromKeepAlive(_socket);
 
     // Clean up player session if exists
     if (_playerUsername != null) {

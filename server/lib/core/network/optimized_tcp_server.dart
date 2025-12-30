@@ -1,5 +1,6 @@
 import 'dart:io';
 import '../constants/network_constants.dart';
+import 'keep_alive/keep_alive_manager.dart';
 import 'optimization/adaptive_scheduler.dart';
 import 'optimization/connection_pool.dart';
 import 'optimization/isolate_pool.dart';
@@ -33,6 +34,7 @@ class HighPerformanceTcpServer {
       PerformanceAdaptiveScheduler();
   final NetworkPerformanceStatistics _statistics =
       NetworkPerformanceStatistics();
+  final KeepAliveManager _keepAliveManager = KeepAliveManager();
 
   bool _isRunning = false;
 
@@ -56,6 +58,7 @@ class HighPerformanceTcpServer {
 
     _startListening();
     _scheduler.start();
+    _keepAliveManager.start();
 
     _isRunning = true;
     NetworkLogger.info('HighPerformanceTcpServer', 'Started on port $port');
@@ -109,6 +112,7 @@ class HighPerformanceTcpServer {
     print('│ ✓ Connection Workers: ${ConnectionWorkerPool.kWorkerCount}');
     print('│ ✓ Memory Pooling: Active');
     print('│ ✓ Adaptive Scheduler: Active');
+    print('│ ✓ Keep Alive System: Active');
     print('│ ✓ Statistics Tracking: Active');
     print('└────────────────────────────────────────┘');
   }
@@ -135,6 +139,7 @@ class HighPerformanceTcpServer {
       return;
     }
 
+    _keepAliveManager.stop();
     _scheduler.stop();
     _connectionPool.closeAll();
     await _server?.close();
