@@ -9,11 +9,14 @@ class ProtocolRegistry {
   /// Gets packet IDs for a specific protocol version.
   ///
   /// Returns packet IDs optimized for the given version.
+  /// Protocol 769 (1.20.2) uses same packet IDs as 1.20.4.
   static ProtocolPacketIds getPacketIds(int protocolVersion) {
     if (protocolVersion >= ProtocolVersion.v1_21) {
       return ProtocolPacketIds.v1_21();
-    } else if (protocolVersion >= ProtocolVersion.v1_20_6 ||
+    } else if (protocolVersion == ProtocolVersion.v1_20_6 ||
         protocolVersion == ProtocolVersion.v1_20_6_alt) {
+      // Protocol 769 (1.20.2) uses same packet IDs as 1.20.4
+      // Both 766 and 769 are treated as 1.20.6 for packet IDs
       return ProtocolPacketIds.v1_20_6();
     } else if (protocolVersion >= ProtocolVersion.v1_20_4) {
       return ProtocolPacketIds.v1_20_4();

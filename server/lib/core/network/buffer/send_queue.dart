@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:typed_data';
 import '../../protocol/packet.dart';
 import '../utils/connection_error_handler.dart';
-import '../optimization/memory_pool.dart';
 
 class SendQueue {
   final Socket _socket;
@@ -61,8 +60,16 @@ class SendQueue {
 
   bool _sendBatch(List<Uint8List> batch) {
     try {
-      final combined = _combineBytes(batch);
-      _socket.add(combined);
+      // CRITICAL: Minecraft protocol requires each packet to be sent separately
+      // DO NOT combine packets - each packet has its own length prefix
+      // Combining packets causes the client to misread packet boundaries
+      // Send each packet individually and flush to ensure immediate transmission
+      for (final packetBytes in batch) {
+        _socket.add(packetBytes);
+        // Flush after each packet to ensure it's sent immediately
+        // This prevents TCP from buffering and combining packets
+        _socket.flush();
+      }
       return true;
     } on SocketException {
       _closeQueue();
@@ -87,29 +94,9 @@ class SendQueue {
     _queue.clear();
   }
 
-  Uint8List _combineBytes(List<Uint8List> batches) {
-    int totalLength = 0;
-    for (final batch in batches) {
-      totalLength += batch.length;
-    }
-
-    // Use memory pool for buffer allocation (zero-copy optimization)
-    final memoryPool = BufferMemoryPool();
-    final combined = memoryPool.acquire(totalLength);
-
-    int offset = 0;
-    for (final batch in batches) {
-      combined.setRange(offset, offset + batch.length, batch);
-      offset += batch.length;
-    }
-
-    // Return a copy since we'll release the pooled buffer
-    // In production, we could use TransferableTypedData for true zero-copy
-    final result = Uint8List.fromList(combined.sublist(0, totalLength));
-    memoryPool.release(combined);
-
-    return result;
-  }
+  // REMOVED: _combineBytes is no longer used
+  // Minecraft protocol requires packets to be sent separately, not combined
+  // Each packet must be sent individually to maintain proper packet boundaries
 
   void clear() {
     _closeQueue();

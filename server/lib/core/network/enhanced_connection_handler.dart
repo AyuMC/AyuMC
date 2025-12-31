@@ -251,10 +251,18 @@ class EnhancedConnectionHandler {
       MapDimension.overworld,
     );
 
-    // Set player position to spawn
+    // Set player position to spawn (initialize yaw and pitch to 0)
     session.x = spawnX.toDouble();
     session.y = spawnY.toDouble();
     session.z = spawnZ.toDouble();
+    session.yaw = 0.0;
+    session.pitch = 0.0;
+
+    // IMPORTANT: In Minecraft 1.20.4, the correct order is:
+    // 1. Join Game (already sent)
+    // 2. Spawn Position
+    // 3. Player Position (with teleport ID)
+    // 4. Chunks (if enabled)
 
     // Send spawn position packet
     final spawnPacket = PlayHandler.createSpawnPositionPacket(
@@ -272,8 +280,9 @@ class EnhancedConnectionHandler {
       ),
     );
 
-    // Send player position packet
-    final posPacket = PlayHandler.createSyncPositionPacket(session, 0);
+    // Send player position packet with teleport ID
+    // Teleport ID must be unique and incrementing
+    final posPacket = PlayHandler.createSyncPositionPacket(session, 1);
     _sendQueue.enqueue(
       Packet(
         id: ProtocolRegistry.getPacketIds(
@@ -316,8 +325,12 @@ class EnhancedConnectionHandler {
 
   void _onError(Object error) {
     if (!_isClosed) {
-      final clientInfo =
-          '${_socket.remoteAddress.address}:${_socket.remotePort}';
+      String clientInfo;
+      try {
+        clientInfo = '${_socket.remoteAddress.address}:${_socket.remotePort}';
+      } catch (e) {
+        clientInfo = 'unknown (socket closed)';
+      }
       final errorType = error.runtimeType.toString();
       final errorMessage = error.toString();
 
@@ -342,7 +355,12 @@ class EnhancedConnectionHandler {
     if (_isClosed) return;
     _isClosed = true;
 
-    final clientInfo = '${_socket.remoteAddress.address}:${_socket.remotePort}';
+    String clientInfo;
+    try {
+      clientInfo = '${_socket.remoteAddress.address}:${_socket.remotePort}';
+    } catch (e) {
+      clientInfo = 'unknown (socket closed)';
+    }
     final connectionDuration = _connectionStartTime != null
         ? DateTime.now().difference(_connectionStartTime!).inMilliseconds
         : 0;

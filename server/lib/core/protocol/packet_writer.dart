@@ -1,10 +1,8 @@
 import 'dart:typed_data';
-import '../network/optimization/memory_pool.dart';
 import 'var_int.dart';
 
 class PacketWriter {
   final List<int> _buffer = [];
-  static final BufferMemoryPool _memoryPool = BufferMemoryPool();
 
   void writeVarInt(int value) {
     final size = VarInt.getSize(value);
@@ -51,13 +49,19 @@ class PacketWriter {
   void writeDouble(double value) {
     final data = ByteData(8);
     data.setFloat64(0, value, Endian.big);
-    _buffer.addAll(data.buffer.asUint8List());
+    // Extract only the 8 bytes we need (not the entire buffer)
+    for (int i = 0; i < 8; i++) {
+      _buffer.add(data.getUint8(i));
+    }
   }
 
   void writeFloat(double value) {
     final data = ByteData(4);
     data.setFloat32(0, value, Endian.big);
-    _buffer.addAll(data.buffer.asUint8List());
+    // Extract only the 4 bytes we need (not the entire buffer)
+    for (int i = 0; i < 4; i++) {
+      _buffer.add(data.getUint8(i));
+    }
   }
 
   /// Writes a UUID as 16 bytes (most significant bits first, then least significant).
@@ -105,13 +109,8 @@ class PacketWriter {
   }
 
   Uint8List toBytes() {
-    // Use memory pool for buffer allocation (reduces GC pressure)
-    final buffer = _memoryPool.acquire(_buffer.length);
-    for (int i = 0; i < _buffer.length; i++) {
-      buffer[i] = _buffer[i];
-    }
-    final result = Uint8List.fromList(buffer.sublist(0, _buffer.length));
-    _memoryPool.release(buffer);
-    return result;
+    // Convert List<int> to Uint8List directly (simpler and safer)
+    // Memory pool is optional optimization, but direct conversion is more reliable
+    return Uint8List.fromList(_buffer);
   }
 }

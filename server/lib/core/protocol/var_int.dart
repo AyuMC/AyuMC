@@ -58,13 +58,19 @@ class VarInt {
       throw Exception('VarInt cannot be negative');
     }
 
+    // Calculate size by simulating write operation
     int size = 0;
-    while (value != 0) {
-      value >>= 7;
+    int tempValue = value;
+
+    while (true) {
       size++;
+      tempValue >>= 7;
+      if (tempValue == 0) {
+        break;
+      }
     }
 
-    return size == 0 ? 1 : size;
+    return size;
   }
 
   /// Encodes a value to a VarInt byte array.

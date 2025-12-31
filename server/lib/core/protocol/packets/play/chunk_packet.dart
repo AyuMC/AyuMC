@@ -167,12 +167,9 @@ class SetCenterChunkPacket {
     this.protocolVersion = 765,
   });
 
-  Uint8List toFramedBytes() {
-    final packetIds = ProtocolRegistry.getPacketIds(protocolVersion);
+  /// Returns payload without packet ID and length (for use with Packet wrapper).
+  Uint8List toPayload() {
     final buffer = BytesBuilder(copy: false);
-
-    // Packet ID
-    _writeVarInt(buffer, packetIds.playSetCenterChunk);
 
     // Chunk X
     _writeVarInt(buffer, chunkX);
@@ -180,12 +177,26 @@ class SetCenterChunkPacket {
     // Chunk Z
     _writeVarInt(buffer, chunkZ);
 
-    final payload = buffer.toBytes();
-    final lengthBytes = VarInt.encode(payload.length);
+    return buffer.toBytes();
+  }
 
-    final result = Uint8List(lengthBytes.length + payload.length);
+  Uint8List toFramedBytes() {
+    final packetIds = ProtocolRegistry.getPacketIds(protocolVersion);
+    final buffer = BytesBuilder(copy: false);
+
+    // Packet ID
+    _writeVarInt(buffer, packetIds.playSetCenterChunk);
+
+    // Payload
+    final payload = toPayload();
+    buffer.add(payload);
+
+    final payloadBytes = buffer.toBytes();
+    final lengthBytes = VarInt.encode(payloadBytes.length);
+
+    final result = Uint8List(lengthBytes.length + payloadBytes.length);
     result.setAll(0, lengthBytes);
-    result.setAll(lengthBytes.length, payload);
+    result.setAll(lengthBytes.length, payloadBytes);
 
     return result;
   }
@@ -203,6 +214,12 @@ class SetCenterChunkPacket {
 class ChunkBatchStartPacket {
   final int protocolVersion;
   const ChunkBatchStartPacket({this.protocolVersion = 765});
+
+  /// Returns payload without packet ID and length (for use with Packet wrapper).
+  /// This packet has no payload (empty).
+  Uint8List toPayload() {
+    return Uint8List(0);
+  }
 
   Uint8List toFramedBytes() {
     final packetIds = ProtocolRegistry.getPacketIds(protocolVersion);
@@ -224,19 +241,27 @@ class ChunkBatchFinishedPacket {
 
   final int batchSize;
 
+  /// Returns payload without packet ID and length (for use with Packet wrapper).
+  Uint8List toPayload() {
+    final buffer = BytesBuilder(copy: false);
+    _writeVarInt(buffer, batchSize);
+    return buffer.toBytes();
+  }
+
   Uint8List toFramedBytes() {
     final packetIds = ProtocolRegistry.getPacketIds(protocolVersion);
     final buffer = BytesBuilder(copy: false);
 
     buffer.addByte(packetIds.playChunkBatchFinished);
-    _writeVarInt(buffer, batchSize);
+    final payload = toPayload();
+    buffer.add(payload);
 
-    final payload = buffer.toBytes();
-    final lengthBytes = VarInt.encode(payload.length);
+    final payloadBytes = buffer.toBytes();
+    final lengthBytes = VarInt.encode(payloadBytes.length);
 
-    final result = Uint8List(lengthBytes.length + payload.length);
+    final result = Uint8List(lengthBytes.length + payloadBytes.length);
     result.setAll(0, lengthBytes);
-    result.setAll(lengthBytes.length, payload);
+    result.setAll(lengthBytes.length, payloadBytes);
 
     return result;
   }

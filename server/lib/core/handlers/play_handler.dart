@@ -1,7 +1,7 @@
 import 'dart:io';
+import '../logging/server_logger.dart';
 import '../network/keep_alive/keep_alive_manager.dart';
 import '../protocol/packet.dart';
-import '../protocol/packet_ids.dart';
 import '../protocol/packet_reader.dart';
 import '../protocol/protocol_registry.dart';
 import '../protocol/packets/play/join_game_packet_builder.dart';
@@ -69,36 +69,110 @@ class PlayHandler {
   /// Handles incoming play packets with optimized routing.
   ///
   /// Routes packets to specialized handlers based on packet ID.
-  /// Uses jump table for O(1) packet dispatch.
+  /// Uses protocol-aware packet ID lookup for version compatibility.
   static void handlePacket(
     Packet packet,
     Socket socket,
     void Function(Packet) sendResponse,
     PlayerSession session,
   ) {
-    // Fast packet routing using packet ID
-    switch (packet.id) {
-      case PacketIds.playKeepAliveServerbound:
-        _handleKeepAlive(packet, socket);
-        break;
-      case 0x00: // Teleport Confirm
-        _handleTeleportConfirm(packet, session);
-        break;
-      case PacketIds.playPlayerPositionServerbound:
-        _handlePlayerPosition(packet, session);
-        break;
-      case 0x1B: // Player Position and Rotation
-        _handlePlayerPositionRotation(packet, session);
-        break;
-      case 0x1C: // Player Rotation
-        _handlePlayerRotation(packet, session);
-        break;
-      case PacketIds.playChatMessage:
-        _handleChatMessage(packet, socket, session);
-        break;
-      default:
-        // Ignore unknown packets (reduces log spam)
-        break;
+    // Get protocol-specific packet IDs
+    final packetIds = ProtocolRegistry.getPacketIds(session.protocolVersion);
+    final packetId = packet.id;
+
+    // Fast packet routing using protocol-aware packet IDs
+    if (packetId == packetIds.playKeepAliveServerbound) {
+      _handleKeepAlive(packet, socket);
+    } else if (packetId == 0x00) {
+      // Teleport Confirm (same across versions)
+      _handleTeleportConfirm(packet, session);
+    } else if (packetId == 0x01) {
+      // Query Block Entity Tag (1.20.4+)
+      _handleQueryBlockEntityTag(packet, session);
+    } else if (packetId == 0x03) {
+      // Client Command (1.20.4) - different from 0x07 in newer versions
+      _handleClientCommand(packet, session);
+    } else if (packetId == packetIds.playPlayerPositionServerbound) {
+      _handlePlayerPosition(packet, session);
+    } else if (packetId == 0x1B || packetId == 0x1C) {
+      // Player Position and Rotation (version-dependent)
+      _handlePlayerPositionRotation(packet, session);
+    } else if (packetId == 0x1C || packetId == 0x1D) {
+      // Player Rotation (version-dependent)
+      _handlePlayerRotation(packet, session);
+    } else if (packetId == packetIds.playChatMessage) {
+      _handleChatMessage(packet, socket, session);
+    } else if (packetId == 0x28) {
+      // Configuration Acknowledged (1.20.2+)
+      _handleConfigurationAcknowledged(packet, session);
+    } else if (packetId == 0x05) {
+      // Client Information (1.20.2+)
+      _handleClientInformation(packet, session);
+    } else if (packetId == 0x07) {
+      // Client Command (1.20.2+)
+      _handleClientCommand(packet, session);
+    } else {
+      // Log unknown packets for debugging (only first occurrence)
+      _logUnknownPacket(packetId, session.protocolVersion);
+    }
+  }
+
+  /// Handles Configuration Acknowledged packet (1.20.2+).
+  static void _handleConfigurationAcknowledged(
+    Packet packet,
+    PlayerSession session,
+  ) {
+    // Client acknowledges configuration - no action needed
+    // This packet is sent after client receives configuration packets
+  }
+
+  /// Handles Client Information packet (1.20.2+).
+  static void _handleClientInformation(Packet packet, PlayerSession session) {
+    // Client sends information like language, view distance, etc.
+    // For now, we just acknowledge it
+    try {
+      final reader = PacketReader(packet.data);
+      reader.readString(); // locale
+      reader.readByte(); // viewDistance
+      reader.readVarInt(); // chatMode
+      reader.readBool(); // chatColors
+      reader.readUnsignedByte(); // displayedSkinParts
+      reader.readVarInt(); // mainHand
+      reader.readBool(); // enableTextFiltering
+      reader.readBool(); // allowServerListings
+
+      // Store client preferences in session (if needed)
+      // For now, we just acknowledge
+    } catch (e) {
+      // Ignore parsing errors for optional packets
+    }
+  }
+
+  /// Handles Client Command packet (1.20.2+).
+  static void _handleClientCommand(Packet packet, PlayerSession session) {
+    // Client sends command acknowledgment
+    // For now, we just acknowledge it
+    try {
+      final reader = PacketReader(packet.data);
+      reader.readVarInt(); // actionId: 0 = perform respawn, 1 = request stats
+      // For now, we just acknowledge
+    } catch (e) {
+      // Ignore parsing errors for optional packets
+    }
+  }
+
+  /// Logs unknown packet for debugging (only once per packet ID).
+  static final Set<int> _loggedUnknownPackets = {};
+
+  static void _logUnknownPacket(int packetId, int protocolVersion) {
+    if (!_loggedUnknownPackets.contains(packetId)) {
+      _loggedUnknownPackets.add(packetId);
+      // Use ServerLogger instead of print
+      final logger = ServerLogger();
+      logger.debug(
+        'PlayHandler',
+        'Unknown packet ID: 0x${packetId.toRadixString(16).toUpperCase().padLeft(2, '0')} (Protocol: $protocolVersion)',
+      );
     }
   }
 
@@ -119,6 +193,22 @@ class PlayHandler {
 
   static void _handleTeleportConfirm(Packet packet, PlayerSession session) {
     // Teleport confirmed - no action needed for basic implementation
+  }
+
+  /// Handles Query Block Entity Tag packet (1.20.4+).
+  ///
+  /// Client queries block entity data (e.g., chest contents, sign text).
+  /// For now, we just acknowledge it without sending response.
+  static void _handleQueryBlockEntityTag(Packet packet, PlayerSession session) {
+    // Client queries block entity tag - no action needed for basic implementation
+    // In full implementation, we would parse the query and send response
+    try {
+      final reader = PacketReader(packet.data);
+      reader.readPosition(); // Read block position
+      // Query is acknowledged silently
+    } catch (e) {
+      // Ignore parsing errors for optional packets
+    }
   }
 
   /// Handles player position update with ultra-low overhead.

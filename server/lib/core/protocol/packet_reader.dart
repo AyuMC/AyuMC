@@ -55,10 +55,35 @@ class PacketReader {
     return value;
   }
 
+  int readByte() {
+    final value = _data[_offset];
+    _offset++;
+    return value;
+  }
+
+  int readUnsignedByte() {
+    return readByte() & 0xFF;
+  }
+
   Uint8List readBytes(int length) {
     final bytes = _data.sublist(_offset, _offset + length);
     _offset += length;
     return bytes;
+  }
+
+  /// Reads a position as a packed 64-bit value.
+  ///
+  /// X: 26 bits, Z: 26 bits, Y: 12 bits
+  /// Returns a map with x, y, z coordinates.
+  Map<String, int> readPosition() {
+    final packed = readLong();
+    final x = (packed >> 38) & 0x3FFFFFF;
+    final z = (packed >> 12) & 0x3FFFFFF;
+    final y = packed & 0xFFF;
+    // Sign extend if needed
+    final xSigned = (x & 0x2000000) != 0 ? (x | 0xFC000000) : x;
+    final zSigned = (z & 0x2000000) != 0 ? (z | 0xFC000000) : z;
+    return {'x': xSigned, 'y': y, 'z': zSigned};
   }
 
   int get remaining => _data.length - _offset;

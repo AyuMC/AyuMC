@@ -3,7 +3,6 @@ import '../../config/server_config.dart';
 import '../../logging/server_logger.dart';
 import '../../protocol/packet.dart';
 import '../../protocol/protocol_registry.dart';
-import '../../protocol/var_int.dart';
 import '../../protocol/packets/play/chunk_packet.dart';
 import '../map_dimension.dart';
 import '../map_manager.dart';
@@ -58,26 +57,19 @@ class ChunkSender {
       centerChunkZ,
       protocolVersion: protocolVersion,
     );
-    // Extract payload from toFramedBytes (skip length, keep payload)
-    final centerFramed = centerPacket.toFramedBytes();
-    final lengthSize = VarInt.decodeSize(centerFramed, 0);
-    final centerPayload = centerFramed.sublist(lengthSize);
     sendQueue.enqueue(
       Packet(
         id: ProtocolRegistry.getPacketIds(protocolVersion).playSetCenterChunk,
-        data: centerPayload,
+        data: centerPacket.toPayload(),
       ),
     );
 
     // 2. Chunk Batch Start
     final batchStart = ChunkBatchStartPacket(protocolVersion: protocolVersion);
-    final batchStartFramed = batchStart.toFramedBytes();
-    final batchStartLengthSize = VarInt.decodeSize(batchStartFramed, 0);
-    final batchStartPayload = batchStartFramed.sublist(batchStartLengthSize);
     sendQueue.enqueue(
       Packet(
         id: ProtocolRegistry.getPacketIds(protocolVersion).playChunkBatchStart,
-        data: batchStartPayload,
+        data: batchStart.toPayload(),
       ),
     );
 
@@ -141,7 +133,7 @@ class ChunkSender {
         id: ProtocolRegistry.getPacketIds(
           protocolVersion,
         ).playChunkBatchFinished,
-        data: batchFinished.toFramedBytes(),
+        data: batchFinished.toPayload(),
       ),
     );
 
