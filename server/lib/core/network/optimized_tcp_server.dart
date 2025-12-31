@@ -8,6 +8,7 @@ import 'optimization/isolate_pool.dart';
 import 'optimization/memory_pool.dart';
 import 'optimization/network_statistics.dart';
 import 'utils/network_logger.dart';
+import '../logging/server_logger.dart';
 
 /// A high-performance TCP server optimized for handling thousands of
 /// concurrent connections.
@@ -108,18 +109,40 @@ class HighPerformanceTcpServer {
 
   void _printOptimizationStatus() {
     final worldStats = MapManager().getStatistics();
-    print('┌────────────────────────────────────────┐');
-    print('│   HIGH PERFORMANCE SERVER STATUS       │');
-    print('├────────────────────────────────────────┤');
-    print('│ ✓ Isolate Workers: ${_isolatePool.workerCount}');
-    print('│ ✓ Connection Workers: ${ConnectionWorkerPool.kWorkerCount}');
-    print('│ ✓ Memory Pooling: Active');
-    print('│ ✓ Adaptive Scheduler: Active');
-    print('│ ✓ Keep Alive System: Active');
-    print('│ ✓ World Manager: Active');
-    print('│   - Overworld chunks: ${worldStats['overworld']}');
-    print('│ ✓ Statistics Tracking: Active');
-    print('└────────────────────────────────────────┘');
+    final logger = ServerLogger();
+    logger.info(
+      'HighPerformanceTcpServer',
+      '┌────────────────────────────────────────┐',
+    );
+    logger.info(
+      'HighPerformanceTcpServer',
+      '│   HIGH PERFORMANCE SERVER STATUS       │',
+    );
+    logger.info(
+      'HighPerformanceTcpServer',
+      '├────────────────────────────────────────┤',
+    );
+    logger.info(
+      'HighPerformanceTcpServer',
+      '│ ✓ Isolate Workers: ${_isolatePool.workerCount}',
+    );
+    logger.info(
+      'HighPerformanceTcpServer',
+      '│ ✓ Connection Workers: ${ConnectionWorkerPool.kWorkerCount}',
+    );
+    logger.info('HighPerformanceTcpServer', '│ ✓ Memory Pooling: Active');
+    logger.info('HighPerformanceTcpServer', '│ ✓ Adaptive Scheduler: Active');
+    logger.info('HighPerformanceTcpServer', '│ ✓ Keep Alive System: Active');
+    logger.info('HighPerformanceTcpServer', '│ ✓ World Manager: Active');
+    logger.info(
+      'HighPerformanceTcpServer',
+      '│   - Overworld chunks: ${worldStats['overworld']}',
+    );
+    logger.info('HighPerformanceTcpServer', '│ ✓ Statistics Tracking: Active');
+    logger.info(
+      'HighPerformanceTcpServer',
+      '└────────────────────────────────────────┘',
+    );
   }
 
   /// Returns comprehensive statistics about server performance.

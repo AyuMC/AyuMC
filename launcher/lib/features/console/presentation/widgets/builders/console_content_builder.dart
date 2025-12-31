@@ -17,7 +17,13 @@ class ConsoleContentBuilder {
     }
 
     return Container(
-      color: Colors.black,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Colors.grey[900]!, Colors.black],
+        ),
+      ),
       child: ListView.builder(
         controller: scrollController,
         itemCount: logs.length,

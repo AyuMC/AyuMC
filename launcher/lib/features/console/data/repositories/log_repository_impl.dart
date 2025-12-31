@@ -12,8 +12,16 @@ class LogRepositoryImpl implements LogRepository {
   factory LogRepositoryImpl() => _instance;
 
   LogRepositoryImpl._internal() {
-    _seedFromServerHistory();
-    _startLogCapture();
+    // Lazy initialization: seed and capture will happen when first accessed
+    // This ensures server is ready before we try to get logs
+  }
+
+  /// Ensures the repository is initialized and ready.
+  void _ensureInitialized() {
+    if (!_seeded) {
+      _seedFromServerHistory();
+      _startLogCapture();
+    }
   }
 
   final StreamController<ServerLog> _logController =
@@ -94,11 +102,15 @@ class LogRepositoryImpl implements LogRepository {
 
   @override
   Stream<ServerLog> getLogStream() {
+    _ensureInitialized();
     return _logController.stream;
   }
 
   @override
   List<ServerLog> getAllLogs() {
+    _ensureInitialized();
+    // Re-seed to ensure we have all logs (in case server started after repository creation)
+    _seedFromServerHistory();
     return List.unmodifiable(_logs);
   }
 

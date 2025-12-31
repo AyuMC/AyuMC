@@ -37,6 +37,11 @@ class _ConsolePageState extends State<ConsolePage> {
 
   @override
   Widget build(BuildContext context) {
+    // Ensure we start listening when page is built
+    if (!context.read<ConsoleBloc>().state.isListening) {
+      context.read<ConsoleBloc>().add(ConsoleStartListening());
+    }
+
     return BlocConsumer<ConsoleBloc, ConsoleState>(
       listener: (context, state) {
         _scrollManager.handleNewLogs(state.logs.length);

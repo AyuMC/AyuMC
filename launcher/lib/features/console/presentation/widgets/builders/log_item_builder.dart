@@ -6,23 +6,41 @@ import '../../../domain/entities/server_log.dart';
 class LogItemBuilder {
   LogItemBuilder._();
 
-  /// Builds a single log item widget.
+  /// Builds a single log item widget with improved styling.
   static Widget build(ServerLog log) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      decoration: BoxDecoration(
+        color: _getBackgroundColor(log.level),
+        border: Border(
+          left: BorderSide(color: Color(log.level.color), width: 3),
+        ),
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildTimestamp(log.timestamp),
-          const SizedBox(width: 8),
+          const SizedBox(width: 12),
           _buildLevelBadge(log.level),
-          const SizedBox(width: 8),
+          const SizedBox(width: 12),
           _buildSource(log.source),
-          const SizedBox(width: 8),
+          const SizedBox(width: 12),
           Expanded(child: _buildMessage(log.message, log.level)),
         ],
       ),
     );
+  }
+
+  static Color _getBackgroundColor(LogLevel level) {
+    switch (level) {
+      case LogLevel.error:
+      case LogLevel.critical:
+        return Color(level.color).withOpacity(0.08);
+      case LogLevel.warning:
+        return Color(level.color).withOpacity(0.06);
+      default:
+        return Colors.transparent;
+    }
   }
 
   static Widget _buildTimestamp(DateTime timestamp) {
@@ -33,21 +51,25 @@ class LogItemBuilder {
 
     return Text(
       time,
-      style: const TextStyle(
+      style: TextStyle(
         fontFamily: 'Consolas',
-        fontSize: 12,
-        color: Color(0xFF6C757D),
+        fontSize: 11,
+        color: Colors.grey[500],
+        fontWeight: FontWeight.w500,
       ),
     );
   }
 
   static Widget _buildLevelBadge(LogLevel level) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: Color(level.color).withOpacity(0.2),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: Color(level.color), width: 1),
+        color: Color(level.color).withOpacity(0.15),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: Color(level.color).withOpacity(0.5),
+          width: 1.5,
+        ),
       ),
       child: Text(
         level.prefix,
@@ -56,6 +78,7 @@ class LogItemBuilder {
           fontSize: 10,
           fontWeight: FontWeight.bold,
           color: Color(level.color),
+          letterSpacing: 0.5,
         ),
       ),
     );
@@ -64,23 +87,39 @@ class LogItemBuilder {
   static Widget _buildSource(String source) {
     return Text(
       '[$source]',
-      style: const TextStyle(
+      style: TextStyle(
         fontFamily: 'Consolas',
         fontSize: 12,
         fontWeight: FontWeight.w600,
-        color: Color(0xFF0D6EFD),
+        color: const Color(0xFF0D6EFD).withOpacity(0.9),
       ),
     );
   }
 
   static Widget _buildMessage(String message, LogLevel level) {
-    return Text(
+    // Use appropriate text color based on level
+    final textColor = _getTextColor(level);
+
+    return SelectableText(
       message,
       style: TextStyle(
         fontFamily: 'Consolas',
-        fontSize: 12,
-        color: Color(level.color),
+        fontSize: 13,
+        color: textColor,
+        height: 1.4,
       ),
     );
+  }
+
+  static Color _getTextColor(LogLevel level) {
+    switch (level) {
+      case LogLevel.error:
+      case LogLevel.critical:
+        return Color(level.color);
+      case LogLevel.warning:
+        return Color(level.color).withOpacity(0.95);
+      default:
+        return Colors.grey[200]!;
+    }
   }
 }

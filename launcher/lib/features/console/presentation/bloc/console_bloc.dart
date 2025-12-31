@@ -29,7 +29,7 @@ class ConsoleBloc extends Bloc<ConsoleEvent, ConsoleState> {
   ) async {
     if (state.isListening) return;
 
-    // First, load all existing logs from repository
+    // First, load all existing logs from repository (ensures we get startup logs)
     final existingLogs = _logRepository.getAllLogs();
     final filtered = _applyFilters(existingLogs);
 
