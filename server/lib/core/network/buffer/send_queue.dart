@@ -9,7 +9,6 @@ class SendQueue {
   final List<Uint8List> _queue = [];
   bool _isSending = false;
   bool _isClosed = false;
-  static const int _kBatchSize = 10;
   static const int _kMaxQueueSize = 1000;
 
   SendQueue(this._socket);
@@ -33,14 +32,28 @@ class SendQueue {
     _isSending = true;
 
     try {
+      // CRITICAL: Send packets one by one, not in batches
+      // This ensures each packet is sent immediately and separately
       while (_queue.isNotEmpty && !_isClosed) {
-        final batch = _extractBatch();
-        _queue.removeRange(0, batch.length);
-
-        if (!_sendBatch(batch)) {
+        final packetBytes = _queue.removeAt(0);
+        
+        try {
+          // Send packet immediately
+          _socket.add(packetBytes);
+          // Note: Socket in Dart doesn't have flush(), but add() should send immediately
+          // We send one packet at a time to ensure proper packet boundaries
+        } on SocketException {
+          _closeQueue();
           return;
+        } catch (e) {
+          if (ConnectionErrorHandler.isConnectionError(e)) {
+            _closeQueue();
+            return;
+          }
+          rethrow;
         }
 
+        // Yield to event loop after each packet to prevent blocking
         if (_queue.isNotEmpty) {
           await Future.delayed(Duration.zero);
         }
@@ -52,36 +65,8 @@ class SendQueue {
     }
   }
 
-  List<Uint8List> _extractBatch() {
-    return _queue.length > _kBatchSize
-        ? _queue.sublist(0, _kBatchSize)
-        : List<Uint8List>.from(_queue);
-  }
-
-  bool _sendBatch(List<Uint8List> batch) {
-    try {
-      // CRITICAL: Minecraft protocol requires each packet to be sent separately
-      // DO NOT combine packets - each packet has its own length prefix
-      // Combining packets causes the client to misread packet boundaries
-      // Send each packet individually and flush to ensure immediate transmission
-      for (final packetBytes in batch) {
-        _socket.add(packetBytes);
-        // Flush after each packet to ensure it's sent immediately
-        // This prevents TCP from buffering and combining packets
-        _socket.flush();
-      }
-      return true;
-    } on SocketException {
-      _closeQueue();
-      return false;
-    } catch (e) {
-      if (ConnectionErrorHandler.isConnectionError(e)) {
-        _closeQueue();
-        return false;
-      }
-      rethrow;
-    }
-  }
+  // REMOVED: _extractBatch and _sendBatch are no longer used
+  // Packets are now sent one by one in _processQueue to ensure proper boundaries
 
   void _handleError(Object error) {
     if (!_isClosed) {

@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 
 import '../../packet_writer.dart';
-import '../../var_int.dart';
 
 /// Ultra-optimized Join Game packet builder with memory pooling.
 ///
@@ -17,12 +16,9 @@ class JoinGamePacketBuilder {
     'minecraft:the_end',
   ];
 
-  static final Uint8List _cachedDimensionType = _encodeString(
-    'minecraft:overworld',
-  );
-  static final Uint8List _cachedDimensionName = _encodeString(
-    'minecraft:overworld',
-  );
+  // Cache dimension strings (not pre-encoded, to avoid double encoding)
+  static const String _cachedDimensionType = 'minecraft:overworld';
+  static const String _cachedDimensionName = 'minecraft:overworld';
 
   /// Builds a Join Game packet payload (without packet ID and length).
   ///
@@ -76,11 +72,11 @@ class JoinGamePacketBuilder {
     // Do Limited Crafting
     writer.writeBool(doLimitedCrafting);
 
-    // Dimension Type (use pre-encoded cached data)
-    writer.writeBytes(_cachedDimensionType);
+    // Dimension Type (write as string to ensure proper encoding)
+    writer.writeString(_cachedDimensionType);
 
-    // Dimension Name (use pre-encoded cached data)
-    writer.writeBytes(_cachedDimensionName);
+    // Dimension Name (write as string to ensure proper encoding)
+    writer.writeString(_cachedDimensionName);
 
     // Hashed Seed
     writer.writeLong(hashedSeed);
@@ -103,13 +99,6 @@ class JoinGamePacketBuilder {
     return writer.toBytes();
   }
 
-  /// Pre-encodes a string for efficient reuse.
-  static Uint8List _encodeString(String value) {
-    final bytes = value.codeUnits;
-    final lengthBytes = VarInt.encode(bytes.length);
-    final result = Uint8List(lengthBytes.length + bytes.length);
-    result.setRange(0, lengthBytes.length, lengthBytes);
-    result.setRange(lengthBytes.length, result.length, bytes);
-    return result;
-  }
+  // REMOVED: _encodeString is no longer needed
+  // We now write strings directly using PacketWriter.writeString() to avoid double encoding
 }
