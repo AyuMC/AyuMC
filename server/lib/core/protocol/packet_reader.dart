@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 import 'var_int.dart';
 
@@ -14,10 +15,12 @@ class PacketReader {
   }
 
   String readString() {
+    // CRITICAL: Minecraft protocol uses UTF-8 encoding!
+    // We must decode bytes as UTF-8, not use fromCharCodes (which is for UTF-16)
     final length = readVarInt();
     final bytes = _data.sublist(_offset, _offset + length);
     _offset += length;
-    return String.fromCharCodes(bytes);
+    return utf8.decode(bytes);
   }
 
   int readUnsignedShort() {

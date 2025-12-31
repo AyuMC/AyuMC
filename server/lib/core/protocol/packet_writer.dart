@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 import 'var_int.dart';
 
@@ -12,7 +13,9 @@ class PacketWriter {
   }
 
   void writeString(String value) {
-    final bytes = value.codeUnits;
+    // CRITICAL: Minecraft protocol uses UTF-8 encoding!
+    // We must convert string to UTF-8 bytes using proper encoding
+    final bytes = utf8.encode(value);
     writeVarInt(bytes.length);
     _buffer.addAll(bytes);
   }
@@ -35,6 +38,14 @@ class PacketWriter {
   }
 
   void writeByte(int value) {
+    // Write as signed byte (range: -128 to 127)
+    // For negative values like -1, convert to unsigned byte representation
+    // -1 becomes 0xFF, -128 becomes 0x80, etc.
+    _buffer.add(value.toUnsigned(8));
+  }
+
+  /// Writes an unsigned byte (range: 0 to 255).
+  void writeUnsignedByte(int value) {
     _buffer.add(value & 0xFF);
   }
 

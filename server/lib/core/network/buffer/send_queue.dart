@@ -36,7 +36,7 @@ class SendQueue {
       // This ensures each packet is sent immediately and separately
       while (_queue.isNotEmpty && !_isClosed) {
         final packetBytes = _queue.removeAt(0);
-        
+
         try {
           // Send packet immediately
           _socket.add(packetBytes);
