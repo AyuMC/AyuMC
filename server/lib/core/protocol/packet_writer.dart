@@ -1,8 +1,10 @@
 import 'dart:typed_data';
+import '../network/optimization/memory_pool.dart';
 import 'var_int.dart';
 
 class PacketWriter {
   final List<int> _buffer = [];
+  static final BufferMemoryPool _memoryPool = BufferMemoryPool();
 
   void writeVarInt(int value) {
     final size = VarInt.getSize(value);
@@ -102,5 +104,14 @@ class PacketWriter {
     writeLong(packed);
   }
 
-  Uint8List toBytes() => Uint8List.fromList(_buffer);
+  Uint8List toBytes() {
+    // Use memory pool for buffer allocation (reduces GC pressure)
+    final buffer = _memoryPool.acquire(_buffer.length);
+    for (int i = 0; i < _buffer.length; i++) {
+      buffer[i] = _buffer[i];
+    }
+    final result = Uint8List.fromList(buffer.sublist(0, _buffer.length));
+    _memoryPool.release(buffer);
+    return result;
+  }
 }

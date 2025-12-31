@@ -74,4 +74,17 @@ class VarInt {
     write(buffer, 0, value);
     return buffer;
   }
+
+  /// Decodes VarInt size from buffer at offset.
+  /// Returns the number of bytes used by the VarInt.
+  static int decodeSize(Uint8List data, int offset) {
+    int position = 0;
+    while (position < 5 && offset + position < data.length) {
+      if ((data[offset + position] & 0x80) == 0) {
+        return position + 1;
+      }
+      position++;
+    }
+    return position;
+  }
 }

@@ -23,22 +23,27 @@ class ChunkDataPacket {
 
   /// Builds the complete packet ready for transmission.
   Uint8List toFramedBytes() {
-    final payload = _buildPayload();
-    final lengthBytes = VarInt.encode(payload.length);
-
-    final result = Uint8List(lengthBytes.length + payload.length);
-    result.setAll(0, lengthBytes);
-    result.setAll(lengthBytes.length, payload);
-
-    return result;
-  }
-
-  Uint8List _buildPayload() {
     final packetIds = ProtocolRegistry.getPacketIds(protocolVersion);
     final buffer = BytesBuilder(copy: false);
 
     // Packet ID
     _writeVarInt(buffer, packetIds.playChunkDataAndLight);
+
+    // Payload (without packet ID)
+    final payload = buildPayload();
+    buffer.add(payload);
+
+    final lengthBytes = VarInt.encode(buffer.length);
+    final result = Uint8List(lengthBytes.length + buffer.length);
+    result.setAll(0, lengthBytes);
+    result.setAll(lengthBytes.length, buffer.toBytes());
+
+    return result;
+  }
+
+  /// Builds payload without packet ID (for use with Packet wrapper).
+  Uint8List buildPayload() {
+    final buffer = BytesBuilder(copy: false);
 
     // Chunk X (int)
     _writeInt(buffer, chunk.x);

@@ -214,8 +214,9 @@ class EnhancedConnectionHandler {
     );
 
     if (ServerConfig.kEnableChunkStreaming) {
+      // Use SendQueue for optimized batching (pressure on client, not server)
       ChunkSender.sendInitialChunks(
-        _socket,
+        _sendQueue,
         session.x,
         session.z,
         dimension: MapDimension.overworld,

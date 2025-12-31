@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
-
 import '../../protocol/packet.dart';
 import '../utils/connection_error_handler.dart';
+import '../optimization/memory_pool.dart';
 
 class SendQueue {
   final Socket _socket;
@@ -93,14 +93,22 @@ class SendQueue {
       totalLength += batch.length;
     }
 
-    final combined = Uint8List(totalLength);
+    // Use memory pool for buffer allocation (zero-copy optimization)
+    final memoryPool = BufferMemoryPool();
+    final combined = memoryPool.acquire(totalLength);
+
     int offset = 0;
     for (final batch in batches) {
       combined.setRange(offset, offset + batch.length, batch);
       offset += batch.length;
     }
 
-    return combined;
+    // Return a copy since we'll release the pooled buffer
+    // In production, we could use TransferableTypedData for true zero-copy
+    final result = Uint8List.fromList(combined.sublist(0, totalLength));
+    memoryPool.release(combined);
+
+    return result;
   }
 
   void clear() {

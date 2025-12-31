@@ -1,5 +1,4 @@
 import 'dart:typed_data';
-
 import '../../protocol/packets/play/chunk_packet.dart';
 import '../chunk/chunk.dart';
 import '../map_dimension.dart';
@@ -11,7 +10,10 @@ import '../map_dimension.dart';
 class FlatWorldChunkEncoder {
   FlatWorldChunkEncoder._();
 
-  /// Encodes a full framed Chunk Data packet for a flat chunk at (chunkX, chunkZ).
+  /// Encodes chunk data payload (without packet ID and length) for a flat chunk.
+  ///
+  /// Returns only the payload bytes (packet ID and length are added by Packet wrapper).
+  /// This allows protocol-aware packet ID assignment in ChunkSender.
   static Uint8List encodeChunkPacket({
     required MapDimension dimension,
     required int chunkX,
@@ -20,6 +22,8 @@ class FlatWorldChunkEncoder {
     // For now, flat world generation is deterministic and cheap.
     // Later: switch on dimension / generator.
     final chunk = Chunk.flatWorld(chunkX, chunkZ);
-    return ChunkDataPacket(chunk).toFramedBytes();
+    final packet = ChunkDataPacket(chunk);
+    // Return only payload (without packet ID and length)
+    return packet.buildPayload();
   }
 }
