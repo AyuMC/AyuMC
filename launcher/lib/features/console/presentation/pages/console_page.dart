@@ -39,7 +39,7 @@ class _ConsolePageState extends State<ConsolePage> {
   Widget build(BuildContext context) {
     // Ensure we start listening when page is built
     if (!context.read<ConsoleBloc>().state.isListening) {
-      context.read<ConsoleBloc>().add(ConsoleStartListening());
+      context.read<ConsoleBloc>().add(const ConsoleStartListening());
     }
 
     return BlocConsumer<ConsoleBloc, ConsoleState>(

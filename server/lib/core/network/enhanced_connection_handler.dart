@@ -34,6 +34,8 @@ class EnhancedConnectionHandler {
   ConnectionState _connectionState = ConnectionState.handshake;
   String? _playerUsername;
   int _protocolVersion = 765; // Default: 1.20.4
+  String? _disconnectReason;
+  DateTime? _connectionStartTime;
 
   Function()? onClose;
 
@@ -45,6 +47,13 @@ class EnhancedConnectionHandler {
 
   void _setupSocket() {
     _socket.setOption(SocketOption.tcpNoDelay, true);
+    _connectionStartTime = DateTime.now();
+
+    final clientInfo = '${_socket.remoteAddress.address}:${_socket.remotePort}';
+    NetworkLogger.debug(
+      'EnhancedConnectionHandler',
+      'New connection from $clientInfo',
+    );
 
     _socket.listen(
       _onData,
@@ -104,19 +113,38 @@ class EnhancedConnectionHandler {
       }
 
       // Process packet based on current state
-      PacketProcessor.process(
-        packet,
-        _sendQueue.enqueue,
-        state: _connectionState,
-      );
+      // For play state, we need to pass session information
+      if (_connectionState == ConnectionState.play && _playerUsername != null) {
+        final session = _sessionManager.getByUsername(_playerUsername!);
+        if (session != null) {
+          // Use PlayHandler directly for play packets
+          PlayHandler.handlePacket(
+            packet,
+            _socket,
+            _sendQueue.enqueue,
+            session,
+          );
+        }
+      } else {
+        // For other states, use PacketProcessor
+        PacketProcessor.process(
+          packet,
+          _sendQueue.enqueue,
+          state: _connectionState,
+          socket: _socket,
+        );
+      }
 
       return true;
     } catch (e) {
       if (!_isClosed) {
+        final clientInfo =
+            '${_socket.remoteAddress.address}:${_socket.remotePort}';
         NetworkLogger.error(
           'EnhancedConnectionHandler',
-          'Packet processing error: $e',
+          'Packet processing error from $clientInfo: $e',
         );
+        _disconnectReason = 'Packet processing error: $e';
         _close();
       }
       return false;
@@ -163,9 +191,51 @@ class EnhancedConnectionHandler {
         // Send spawn position and (optionally) initial chunks
         _sendInitialWorldData(session);
 
+        // Log player join with full details
+        final clientInfo =
+            '${_socket.remoteAddress.address}:${_socket.remotePort}';
+        final sessionManager = SessionManager();
+        final onlineCount = sessionManager.sessionCount;
+        final protocolName = _getProtocolVersionName(_protocolVersion);
+        final connectionDuration = _connectionStartTime != null
+            ? DateTime.now().difference(_connectionStartTime!).inMilliseconds
+            : 0;
+
         NetworkLogger.info(
           'EnhancedConnectionHandler',
-          'Player $username joined the game (Entity ID: $entityId)',
+          '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+        );
+        NetworkLogger.info(
+          'EnhancedConnectionHandler',
+          '✓ Player Joined: $username',
+        );
+        NetworkLogger.info(
+          'EnhancedConnectionHandler',
+          '  ├─ Entity ID: $entityId',
+        );
+        NetworkLogger.info(
+          'EnhancedConnectionHandler',
+          '  ├─ UUID: ${session.uuid}',
+        );
+        NetworkLogger.info(
+          'EnhancedConnectionHandler',
+          '  ├─ Protocol: $protocolName (v$_protocolVersion)',
+        );
+        NetworkLogger.info(
+          'EnhancedConnectionHandler',
+          '  ├─ Address: $clientInfo',
+        );
+        NetworkLogger.info(
+          'EnhancedConnectionHandler',
+          '  ├─ Connection Time: ${connectionDuration}ms',
+        );
+        NetworkLogger.info(
+          'EnhancedConnectionHandler',
+          '  └─ Online Players: $onlineCount/5000',
+        );
+        NetworkLogger.info(
+          'EnhancedConnectionHandler',
+          '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
         );
       }
     } catch (e) {
@@ -246,18 +316,24 @@ class EnhancedConnectionHandler {
 
   void _onError(Object error) {
     if (!_isClosed) {
-      NetworkLogger.error('EnhancedConnectionHandler', 'Socket error: $error');
+      final clientInfo =
+          '${_socket.remoteAddress.address}:${_socket.remotePort}';
+      final errorType = error.runtimeType.toString();
+      final errorMessage = error.toString();
+
+      NetworkLogger.error(
+        'EnhancedConnectionHandler',
+        'Socket error from $clientInfo: [$errorType] $errorMessage',
+      );
+
+      _disconnectReason = 'Socket error: $errorMessage';
       _close();
     }
   }
 
   void _onDone() {
     if (!_isClosed) {
-      NetworkLogger.debug(
-        'EnhancedConnectionHandler',
-        'Client disconnected: ${_socket.remoteAddress.address}:'
-            '${_socket.remotePort}',
-      );
+      _disconnectReason = _disconnectReason ?? 'Client disconnected normally';
       _close();
     }
   }
@@ -265,6 +341,11 @@ class EnhancedConnectionHandler {
   void _close() {
     if (_isClosed) return;
     _isClosed = true;
+
+    final clientInfo = '${_socket.remoteAddress.address}:${_socket.remotePort}';
+    final connectionDuration = _connectionStartTime != null
+        ? DateTime.now().difference(_connectionStartTime!).inMilliseconds
+        : 0;
 
     // Unregister from Keep Alive tracking
     PlayHandler.unregisterFromKeepAlive(_socket);
@@ -277,13 +358,53 @@ class EnhancedConnectionHandler {
       }
     }
 
-    // Clean up player session if exists
+    // Log player disconnect with details
     if (_playerUsername != null) {
       final session = _sessionManager.getByUsername(_playerUsername!);
+      final sessionManager = SessionManager();
+      final onlineCount =
+          sessionManager.sessionCount - 1; // -1 because we're disconnecting
+
+      NetworkLogger.info(
+        'EnhancedConnectionHandler',
+        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      );
+      NetworkLogger.info(
+        'EnhancedConnectionHandler',
+        '✗ Player Left: $_playerUsername',
+      );
+      NetworkLogger.info(
+        'EnhancedConnectionHandler',
+        '  ├─ Reason: ${_disconnectReason ?? "Unknown"}',
+      );
+      NetworkLogger.info(
+        'EnhancedConnectionHandler',
+        '  ├─ Address: $clientInfo',
+      );
+      NetworkLogger.info(
+        'EnhancedConnectionHandler',
+        '  ├─ Session Duration: ${(connectionDuration / 1000).toStringAsFixed(2)}s',
+      );
+      NetworkLogger.info(
+        'EnhancedConnectionHandler',
+        '  └─ Online Players: $onlineCount/5000',
+      );
+      NetworkLogger.info(
+        'EnhancedConnectionHandler',
+        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      );
+
+      // Clean up player session
       if (session != null) {
         _sessionManager.removeSession(session.uuid);
       }
       _playerUsername = null;
+    } else {
+      // Connection closed before login
+      NetworkLogger.debug(
+        'EnhancedConnectionHandler',
+        'Connection closed from $clientInfo (before login) - Reason: ${_disconnectReason ?? "Unknown"}',
+      );
     }
 
     _processTimer?.cancel();
@@ -292,6 +413,17 @@ class EnhancedConnectionHandler {
     _socket.close();
 
     onClose?.call();
+  }
+
+  /// Gets human-readable protocol version name.
+  String _getProtocolVersionName(int protocolVersion) {
+    return switch (protocolVersion) {
+      765 => '1.20.4',
+      766 => '1.20.6',
+      763 => '1.20.1',
+      769 => '1.20.2',
+      _ => 'Unknown ($protocolVersion)',
+    };
   }
 
   void close() {
