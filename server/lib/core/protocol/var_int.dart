@@ -41,16 +41,23 @@ class VarInt {
     }
 
     int position = 0;
-    final expectedSize = getSize(value);
 
-    // CRITICAL: Check bounds before writing
-    if (offset + expectedSize > buffer.length) {
+    // CRITICAL: Check bounds before each write
+    // We need at least 1 byte, but could need up to 5 bytes
+    if (offset >= buffer.length) {
       throw Exception(
-        'VarInt write out of bounds: need ${offset + expectedSize} bytes, have ${buffer.length}',
+        'VarInt write out of bounds: offset $offset >= buffer length ${buffer.length}',
       );
     }
 
     while (true) {
+      // Check bounds before writing each byte
+      if (offset + position >= buffer.length) {
+        throw Exception(
+          'VarInt write out of bounds: need ${offset + position + 1} bytes, have ${buffer.length}',
+        );
+      }
+
       int byte = value & 0x7F;
       value >>= 7;
 
@@ -79,16 +86,24 @@ class VarInt {
     }
 
     // Calculate size by simulating write operation
+    // This MUST match the logic in write() exactly
     int size = 0;
     int tempValue = value;
 
     while (true) {
       size++;
       tempValue >>= 7;
+      
       if (tempValue == 0) {
         break;
       }
     }
+    
+    // Verify size matches actual write
+    if (size > 5) {
+      throw Exception('VarInt size exceeds maximum (5 bytes)');
+    }
+    
     return size;
   }
 

@@ -58,45 +58,54 @@ class Packet {
     final packetIdSize = VarInt.getSize(id);
 
     // Packet length = packet ID size + data length
+    // This is the length of the packet payload (ID + data), not including length VarInt
     final packetLength = packetIdSize + data.length;
 
     // Calculate packet length VarInt size
     final packetLengthSize = VarInt.getSize(packetLength);
 
     // Total buffer size = length VarInt + packet length
-    final buffer = Uint8List(packetLengthSize + packetLength);
+    final totalSize = packetLengthSize + packetLength;
+    final buffer = Uint8List(totalSize);
 
-    // Write packet length (VarInt)
+    // Write packet length (VarInt) at offset 0
     final writtenLengthSize = VarInt.write(buffer, 0, packetLength);
+    
+    // Verify written size matches expected (critical for protocol correctness)
     if (writtenLengthSize != packetLengthSize) {
       throw Exception(
-        'VarInt length size mismatch: expected $packetLengthSize, wrote $writtenLengthSize',
+        'VarInt length size mismatch: expected $packetLengthSize bytes, wrote $writtenLengthSize bytes for value $packetLength',
       );
     }
 
-    // Write packet ID (VarInt)
+    // Write packet ID (VarInt) after length VarInt
     final writtenIdSize = VarInt.write(buffer, packetLengthSize, id);
+    
+    // Verify written size matches expected
     if (writtenIdSize != packetIdSize) {
       throw Exception(
-        'VarInt ID size mismatch: expected $packetIdSize, wrote $writtenIdSize',
+        'VarInt ID size mismatch: expected $packetIdSize bytes, wrote $writtenIdSize bytes for ID $id',
       );
     }
 
-    // Write packet data
+    // Write packet data after packet ID
     final dataStart = packetLengthSize + packetIdSize;
     final dataEnd = dataStart + data.length;
+    
+    // Verify we have enough space
     if (dataEnd > buffer.length) {
       throw Exception(
-        'Packet data overflow: need $dataEnd bytes, buffer has ${buffer.length}',
+        'Packet data overflow: need $dataEnd bytes, buffer has ${buffer.length} bytes',
       );
     }
+    
+    // Copy data to buffer
     buffer.setRange(dataStart, dataEnd, data);
 
-    // Verify total size matches expected
-    final expectedTotalSize = packetLengthSize + packetLength;
-    if (buffer.length != expectedTotalSize) {
+    // Final verification: total size must match
+    if (buffer.length != totalSize) {
       throw Exception(
-        'Packet size mismatch: expected $expectedTotalSize bytes, got ${buffer.length}',
+        'Packet size mismatch: expected $totalSize bytes, got ${buffer.length} bytes',
       );
     }
 

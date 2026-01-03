@@ -81,11 +81,13 @@ class JoinGamePacketBuilder {
     // Hashed Seed
     writer.writeLong(hashedSeed);
 
-    // Game Mode (unsigned byte)
-    writer.writeByte(gameMode);
+    // Game Mode (unsigned byte, range 0-3)
+    // Must use writeUnsignedByte, not writeByte
+    writer.writeUnsignedByte(gameMode);
 
     // Previous Game Mode (signed byte, -1 means no previous game mode)
     // In Minecraft protocol, -1 is encoded as 0xFF (255 in unsigned)
+    // Use writeByte for signed byte
     writer.writeByte(previousGameMode);
 
     // Is Debug

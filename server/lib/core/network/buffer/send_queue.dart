@@ -10,7 +10,6 @@ class SendQueue {
   bool _isSending = false;
   bool _isClosed = false;
   static const int _kMaxQueueSize = 1000;
-
   SendQueue(this._socket);
 
   void enqueue(Packet packet) {
@@ -18,11 +17,47 @@ class SendQueue {
       return;
     }
 
-    final bytes = packet.toBytes();
-    _queue.add(bytes);
+    try {
+      final bytes = packet.toBytes();
 
-    if (!_isSending) {
-      _processQueue();
+      // Validate packet bytes are not empty
+      if (bytes.isEmpty) {
+        throw Exception('Packet bytes are empty');
+      }
+
+      // Debug: Log packet info for Join Game packets
+      if (packet.id == 0x28) {
+        print(
+          '[SendQueue] Join Game packet: ID=${packet.id}, dataLength=${packet.data.length}, totalBytes=${bytes.length}',
+        );
+        // Verify packet can be read back
+        try {
+          final testPacket = Packet.fromBytes(bytes);
+          if (testPacket.id != packet.id) {
+            throw Exception(
+              'Packet ID mismatch after encoding: expected ${packet.id}, got ${testPacket.id}',
+            );
+          }
+          if (testPacket.data.length != packet.data.length) {
+            throw Exception(
+              'Packet data length mismatch: expected ${packet.data.length}, got ${testPacket.data.length}',
+            );
+          }
+        } catch (e) {
+          print('[SendQueue] ERROR: Packet encoding verification failed: $e');
+          rethrow;
+        }
+      }
+
+      _queue.add(bytes);
+
+      if (!_isSending) {
+        _processQueue();
+      }
+    } catch (e) {
+      // Log error but don't crash - this helps identify encoding issues
+      print('[SendQueue] Error encoding packet: $e');
+      rethrow;
     }
   }
 
@@ -38,11 +73,17 @@ class SendQueue {
         final packetBytes = _queue.removeAt(0);
 
         try {
+          // Validate packet bytes before sending
+          if (packetBytes.isEmpty) {
+            throw Exception('Cannot send empty packet');
+          }
+
           // Send packet immediately
           _socket.add(packetBytes);
           // Note: Socket in Dart doesn't have flush(), but add() should send immediately
           // We send one packet at a time to ensure proper packet boundaries
         } on SocketException {
+          // Connection closed or write failed - this is normal when client disconnects
           _closeQueue();
           return;
         } catch (e) {
@@ -50,6 +91,8 @@ class SendQueue {
             _closeQueue();
             return;
           }
+          // Log unexpected errors for debugging
+          print('[SendQueue] Unexpected error sending packet: $e');
           rethrow;
         }
 
