@@ -96,9 +96,12 @@ class ChunkDataPacket {
   }
 
   void _writeLightData(BytesBuilder buffer) {
-    // Sky light mask (BitSet)
+    // CRITICAL: Minecraft 1.20.4 has 24 sections (Y: -64 to 320)
+    // Section count = (320 - (-64)) / 16 = 384 / 16 = 24
+    
+    // Sky light mask (BitSet) - 24 sections = 0xFFFFFF (24 bits set)
     _writeVarInt(buffer, 1);
-    _writeLong(buffer, 0x1FFFFFF); // All 25 sections have sky light
+    _writeLong(buffer, 0xFFFFFF); // All 24 sections have sky light
 
     // Block light mask (BitSet)
     _writeVarInt(buffer, 1);
@@ -112,9 +115,9 @@ class ChunkDataPacket {
     _writeVarInt(buffer, 1);
     _writeLong(buffer, 0);
 
-    // Sky light arrays (25 sections, each 2048 bytes of full light)
-    _writeVarInt(buffer, 25);
-    for (int i = 0; i < 25; i++) {
+    // Sky light arrays (24 sections, each 2048 bytes of full light)
+    _writeVarInt(buffer, 24); // CRITICAL: 24 sections, not 25!
+    for (int i = 0; i < 24; i++) {
       _writeVarInt(buffer, 2048);
       // Full sky light (0xFF for all nibbles)
       buffer.add(_fullSkyLightNibbleArray);

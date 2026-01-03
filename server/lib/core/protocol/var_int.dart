@@ -1,29 +1,37 @@
 import 'dart:typed_data';
 
+/// Result of reading a VarInt, containing both the value and the actual size.
+class VarIntResult {
+  final int value;
+  final int size;
+
+  VarIntResult(this.value, this.size);
+}
+
 class VarInt {
   VarInt._();
 
-  static int read(Uint8List data, int offset) {
+  /// Reads a VarInt from the buffer at the given offset.
+  /// Returns both the value and the actual number of bytes consumed.
+  static VarIntResult read(Uint8List data, int offset) {
     int value = 0;
     int position = 0;
-    int currentByte;
 
     while (true) {
       // CRITICAL: Check bounds before accessing array
-      if (offset >= data.length) {
+      if (offset + position >= data.length) {
         throw Exception(
-          'VarInt read out of bounds: offset $offset >= length ${data.length}',
+          'VarInt read out of bounds: offset ${offset + position} >= length ${data.length}',
         );
       }
 
-      currentByte = data[offset];
+      final currentByte = data[offset + position];
       value |= (currentByte & 0x7F) << (position * 7);
 
       if ((currentByte & 0x80) == 0) {
         break;
       }
 
-      offset++;
       position++;
 
       if (position >= 5) {
@@ -31,7 +39,7 @@ class VarInt {
       }
     }
 
-    return value;
+    return VarIntResult(value, position + 1);
   }
 
   static int write(Uint8List buffer, int offset, int value) {
@@ -85,26 +93,31 @@ class VarInt {
       throw Exception('VarInt cannot be negative');
     }
 
-    // Calculate size by simulating write operation
-    // This MUST match the logic in write() exactly
-    int size = 0;
+    // Calculate size by simulating write operation EXACTLY
+    // This MUST match the logic in write() byte-for-byte
+    // CRITICAL: Must match write() logic exactly:
+    // 1. Write byte (value & 0x7F)
+    // 2. Shift value >>= 7
+    // 3. Increment position
+    // 4. Check if value == 0, break
+    int position = 0;
     int tempValue = value;
 
     while (true) {
-      size++;
+      // Simulate: byte = tempValue & 0x7F (not used, but part of logic)
       tempValue >>= 7;
-      
+      position++;
+
       if (tempValue == 0) {
         break;
       }
+
+      if (position >= 5) {
+        throw Exception('VarInt size exceeds maximum (5 bytes)');
+      }
     }
-    
-    // Verify size matches actual write
-    if (size > 5) {
-      throw Exception('VarInt size exceeds maximum (5 bytes)');
-    }
-    
-    return size;
+
+    return position;
   }
 
   /// Encodes a value to a VarInt byte array.

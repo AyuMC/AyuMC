@@ -9,8 +9,14 @@ import '../protocol/packet_ids.dart';
 import '../protocol/protocol_registry.dart';
 import '../protocol/packets/handshake/handshake_packet.dart';
 import '../protocol/packets/login/login_start_packet.dart';
+import '../protocol/packets/play/player_abilities_packet.dart';
+import '../protocol/packets/play/change_difficulty_packet.dart';
+import '../protocol/packets/play/player_info_update_packet.dart';
+import '../protocol/packets/play/chunk_packet.dart';
+import '../session/player_session.dart';
 import '../session/session_manager.dart';
 import '../world/chunk/chunk_sender.dart';
+import '../world/chunk/chunk.dart';
 import '../world/map_dimension.dart';
 import '../world/map_manager.dart';
 import 'buffer/packet_buffer.dart';
@@ -182,13 +188,44 @@ class EnhancedConnectionHandler {
         );
         _sendQueue.enqueue(joinGamePacket);
 
+        // CRITICAL: Send Player Info Update (REQUIRED in 1.19+)
+        // This must be sent immediately after Join Game
+        final packetIds = ProtocolRegistry.getPacketIds(session.protocolVersion);
+        final playerInfoPacket = PlayerInfoUpdatePacket(
+          actions: [
+            PlayerInfoAction.addPlayer,
+            PlayerInfoAction.updateGameMode,
+            PlayerInfoAction.updateListed,
+            PlayerInfoAction.updateLatency,
+          ],
+          entries: [
+            PlayerInfoEntry(
+              uuid: session.uuid,
+              name: session.username,
+              gameMode: 1, // Creative mode
+              listed: true,
+              latency: 0,
+            ),
+          ],
+        );
+        _sendQueue.enqueue(
+          Packet(
+            id: packetIds.playPlayerInfoUpdate,
+            data: playerInfoPacket.toBytes(),
+          ),
+        );
+
         // Register for Keep Alive tracking
         PlayHandler.registerForKeepAlive(_socket, session.protocolVersion);
 
         // Register for chat broadcasting
         ChatBroadcaster.registerPlayer(session.uuid, _socket);
 
+        // Set up teleport confirm callback
+        PlayHandler.onTeleportConfirmed = _onTeleportConfirmed;
+
         // Send spawn position and (optionally) initial chunks
+        // NOTE: Chunks will be sent after TeleportConfirm is received
         _sendInitialWorldData(session);
 
         // Log player join with full details
@@ -258,13 +295,17 @@ class EnhancedConnectionHandler {
     session.yaw = 0.0;
     session.pitch = 0.0;
 
-    // IMPORTANT: In Minecraft 1.20.4, the correct order is:
-    // 1. Join Game (already sent)
-    // 2. Spawn Position
-    // 3. Player Position (with teleport ID)
-    // 4. Chunks (if enabled)
+    final packetIds = ProtocolRegistry.getPacketIds(session.protocolVersion);
 
-    // Send spawn position packet
+    // CRITICAL: Minecraft protocol requires packets in this exact order after Join Game:
+    // 1. Join Game (already sent)
+    // 2. Set Default Spawn Position
+    // 3. Change Difficulty (REQUIRED - client expects this)
+    // 4. Player Abilities (REQUIRED - client needs this to initialize player entity)
+    // 5. Synchronize Player Position (REQUIRED - client needs to know where it is)
+    // 6. Chunk Data (REQUIRED - at least 1 chunk, client needs world data)
+
+    // 2. Send spawn position packet
     final spawnPacket = PlayHandler.createSpawnPositionPacket(
       x: spawnX,
       y: spawnY,
@@ -273,25 +314,86 @@ class EnhancedConnectionHandler {
     );
     _sendQueue.enqueue(
       Packet(
-        id: ProtocolRegistry.getPacketIds(
-          session.protocolVersion,
-        ).playSetDefaultSpawnPosition,
+        id: packetIds.playSetDefaultSpawnPosition,
         data: spawnPacket.toBytes(),
       ),
     );
 
-    // Send player position packet with teleport ID
-    // Teleport ID must be unique and incrementing
-    final posPacket = PlayHandler.createSyncPositionPacket(session, 1);
+    // 3. Send Change Difficulty packet (REQUIRED)
+    final difficultyPacket = ChangeDifficultyPacket(
+      difficulty: 2, // Normal difficulty
+      difficultyLocked: false,
+    );
     _sendQueue.enqueue(
       Packet(
-        id: ProtocolRegistry.getPacketIds(
-          session.protocolVersion,
-        ).playPlayerPosition,
+        id: packetIds.playChangeDifficulty,
+        data: difficultyPacket.toBytes(),
+      ),
+    );
+
+    // 4. Send Player Abilities packet (REQUIRED)
+    // Creative mode: flags = 0x0E (bit 1: flying, bit 2: allow flying, bit 3: creative mode)
+    // Bit 0: Invulnerable (0)
+    // Bit 1: Flying (1)
+    // Bit 2: Allow Flying (1)
+    // Bit 3: Creative Mode / Instant Break (1)
+    final abilitiesPacket = PlayerAbilitiesPacket(
+      flags: 0x0E, // Creative mode abilities (flying + allow flying + creative mode)
+      flyingSpeed: 0.05,
+      fieldOfViewModifier: 0.1,
+    );
+    _sendQueue.enqueue(
+      Packet(
+        id: packetIds.playPlayerAbilities,
+        data: abilitiesPacket.toBytes(),
+      ),
+    );
+
+    // 5. Send player position packet with teleport ID (REQUIRED)
+    // Teleport ID must be unique and incrementing
+    final teleportId = 1;
+    session.setPendingTeleport(teleportId);
+    final posPacket = PlayHandler.createSyncPositionPacket(session, teleportId);
+    _sendQueue.enqueue(
+      Packet(
+        id: packetIds.playPlayerPosition,
         data: posPacket.toBytes(),
       ),
     );
 
+    // CRITICAL: DO NOT send chunks immediately!
+    // Wait for TeleportConfirm from client first
+    // Chunks will be sent when TeleportConfirm is received via _onTeleportConfirmed callback
+  }
+
+  /// Called when client confirms teleport - now we can safely send chunks.
+  void _onTeleportConfirmed(PlayerSession session) {
+    // Get spawn position
+    final mapManager = MapManager();
+    final (spawnX, spawnY, spawnZ) = mapManager.getSpawnPosition(
+      MapDimension.overworld,
+    );
+
+    // Calculate chunk coordinates
+    final chunkX = (spawnX / 16).floor();
+    final chunkZ = (spawnZ / 16).floor();
+
+    // Create a simple empty chunk (air chunk is fine)
+    final chunk = Chunk(x: chunkX, z: chunkZ);
+    final chunkDataPacket = ChunkDataPacket(
+      chunk,
+      protocolVersion: session.protocolVersion,
+    );
+
+    final packetIds = ProtocolRegistry.getPacketIds(session.protocolVersion);
+    _sendQueue.enqueue(
+      Packet(
+        id: packetIds.playChunkDataAndLight,
+        data: chunkDataPacket.buildPayload(),
+      ),
+    );
+
+    // Optionally send more chunks if chunk streaming is enabled
     if (ServerConfig.kEnableChunkStreaming) {
       // Use SendQueue for optimized batching (pressure on client, not server)
       ChunkSender.sendInitialChunks(

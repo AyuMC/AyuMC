@@ -41,6 +41,9 @@ class ProtocolPacketIds {
   final int playSetCenterChunk;
   final int playPlayerPositionServerbound;
   final int playChatMessage;
+  final int playPlayerAbilities;
+  final int playChangeDifficulty;
+  final int playPlayerInfoUpdate;
 
   const ProtocolPacketIds({
     required this.playJoinGame,
@@ -55,6 +58,9 @@ class ProtocolPacketIds {
     required this.playSetCenterChunk,
     required this.playPlayerPositionServerbound,
     required this.playChatMessage,
+    required this.playPlayerAbilities,
+    required this.playChangeDifficulty,
+    required this.playPlayerInfoUpdate,
   });
 
   /// Packet IDs for Minecraft 1.20.4 (Protocol 765)
@@ -72,6 +78,9 @@ class ProtocolPacketIds {
       playSetCenterChunk: 0x50,
       playPlayerPositionServerbound: 0x18,
       playChatMessage: 0x06,
+      playPlayerAbilities: 0x34, // Player Abilities (1.20.4)
+      playChangeDifficulty: 0x0C, // Change Difficulty (1.20.4)
+      playPlayerInfoUpdate: 0x3C, // Player Info Update (1.20.4)
     );
   }
 
@@ -90,6 +99,9 @@ class ProtocolPacketIds {
       playSetCenterChunk: 0x50,
       playPlayerPositionServerbound: 0x18,
       playChatMessage: 0x06,
+      playPlayerAbilities: 0x34, // Player Abilities (1.20.6)
+      playChangeDifficulty: 0x0C, // Change Difficulty (1.20.6)
+      playPlayerInfoUpdate: 0x3C, // Player Info Update (1.20.6)
     );
   }
 
@@ -108,6 +120,9 @@ class ProtocolPacketIds {
       playSetCenterChunk: 0x54,
       playPlayerPositionServerbound: 0x1A,
       playChatMessage: 0x06,
+      playPlayerAbilities: 0x35, // Player Abilities (1.21+)
+      playChangeDifficulty: 0x0C, // Change Difficulty (1.21+)
+      playPlayerInfoUpdate: 0x3D, // Player Info Update (1.21+)
     );
   }
 }

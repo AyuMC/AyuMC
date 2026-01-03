@@ -15,9 +15,10 @@ class PacketReader {
         'Read VarInt out of bounds: offset $_offset >= length ${_data.length}',
       );
     }
-    final value = VarInt.read(_data, _offset);
-    _offset += VarInt.getSize(value);
-    return value;
+    // CRITICAL: Use actual size consumed, not getSize()
+    final result = VarInt.read(_data, _offset);
+    _offset += result.size;
+    return result.value;
   }
 
   String readString() {

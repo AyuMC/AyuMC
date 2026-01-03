@@ -66,6 +66,9 @@ class PlayHandler {
     KeepAliveManager().unregisterConnection(socket);
   }
 
+  /// Callback for sending chunks after teleport confirm (set by connection handler)
+  static void Function(PlayerSession)? onTeleportConfirmed;
+
   /// Handles incoming play packets with optimized routing.
   ///
   /// Routes packets to specialized handlers based on packet ID.
@@ -192,7 +195,23 @@ class PlayHandler {
   }
 
   static void _handleTeleportConfirm(Packet packet, PlayerSession session) {
-    // Teleport confirmed - no action needed for basic implementation
+    // CRITICAL: Client confirmed teleport - now we can send chunks!
+    try {
+      final reader = PacketReader(packet.data);
+      final teleportId = reader.readVarInt();
+      
+      // Confirm the teleport
+      session.confirmTeleport(teleportId);
+      
+      // Notify connection handler to send chunks
+      if (onTeleportConfirmed != null) {
+        onTeleportConfirmed!(session);
+      }
+    } catch (e) {
+      // Log error but don't crash
+      final logger = ServerLogger();
+      logger.warning('PlayHandler', 'Error handling teleport confirm: $e');
+    }
   }
 
   /// Handles Query Block Entity Tag packet (1.20.4+).

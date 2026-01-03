@@ -22,6 +22,24 @@ class PlayerSession {
   double pitch = 0.0;
   bool onGround = true;
 
+  /// Teleport confirmation state
+  bool _teleportConfirmed = false;
+  int _pendingTeleportId = 0;
+
+  bool get teleportConfirmed => _teleportConfirmed;
+  int get pendingTeleportId => _pendingTeleportId;
+
+  void setPendingTeleport(int teleportId) {
+    _pendingTeleportId = teleportId;
+    _teleportConfirmed = false;
+  }
+
+  void confirmTeleport(int teleportId) {
+    if (teleportId == _pendingTeleportId) {
+      _teleportConfirmed = true;
+    }
+  }
+
   PlayerSession({
     required this.uuid,
     required this.username,
