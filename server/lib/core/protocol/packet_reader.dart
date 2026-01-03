@@ -9,6 +9,12 @@ class PacketReader {
   PacketReader(this._data);
 
   int readVarInt() {
+    // Validate we have enough bytes before reading
+    if (_offset >= _data.length) {
+      throw Exception(
+        'Read VarInt out of bounds: offset $_offset >= length ${_data.length}',
+      );
+    }
     final value = VarInt.read(_data, _offset);
     _offset += VarInt.getSize(value);
     return value;
@@ -18,18 +24,36 @@ class PacketReader {
     // CRITICAL: Minecraft protocol uses UTF-8 encoding!
     // We must decode bytes as UTF-8, not use fromCharCodes (which is for UTF-16)
     final length = readVarInt();
+    
+    // Validate we have enough bytes for the string
+    if (_offset + length > _data.length) {
+      throw Exception(
+        'Read string out of bounds: need ${_offset + length} bytes, have ${_data.length}',
+      );
+    }
+    
     final bytes = _data.sublist(_offset, _offset + length);
     _offset += length;
     return utf8.decode(bytes);
   }
 
   int readUnsignedShort() {
+    if (_offset + 2 > _data.length) {
+      throw Exception(
+        'Read unsigned short out of bounds: need ${_offset + 2} bytes, have ${_data.length}',
+      );
+    }
     final value = (_data[_offset] << 8) | _data[_offset + 1];
     _offset += 2;
     return value;
   }
 
   int readLong() {
+    if (_offset + 8 > _data.length) {
+      throw Exception(
+        'Read long out of bounds: need ${_offset + 8} bytes, have ${_data.length}',
+      );
+    }
     int value = 0;
     for (int i = 0; i < 8; i++) {
       value = (value << 8) | (_data[_offset + i] & 0xFF);
@@ -39,6 +63,11 @@ class PacketReader {
   }
 
   double readDouble() {
+    if (_offset + 8 > _data.length) {
+      throw Exception(
+        'Read double out of bounds: need ${_offset + 8} bytes, have ${_data.length}',
+      );
+    }
     final bytes = _data.sublist(_offset, _offset + 8);
     final byteData = ByteData.view(Uint8List.fromList(bytes).buffer);
     _offset += 8;
@@ -46,6 +75,11 @@ class PacketReader {
   }
 
   double readFloat() {
+    if (_offset + 4 > _data.length) {
+      throw Exception(
+        'Read float out of bounds: need ${_offset + 4} bytes, have ${_data.length}',
+      );
+    }
     final bytes = _data.sublist(_offset, _offset + 4);
     final byteData = ByteData.view(Uint8List.fromList(bytes).buffer);
     _offset += 4;
@@ -53,12 +87,22 @@ class PacketReader {
   }
 
   bool readBool() {
+    if (_offset >= _data.length) {
+      throw Exception(
+        'Read bool out of bounds: offset $_offset >= length ${_data.length}',
+      );
+    }
     final value = _data[_offset] != 0;
     _offset++;
     return value;
   }
 
   int readByte() {
+    if (_offset >= _data.length) {
+      throw Exception(
+        'Read byte out of bounds: offset $_offset >= length ${_data.length}',
+      );
+    }
     final value = _data[_offset];
     _offset++;
     return value;
@@ -69,6 +113,11 @@ class PacketReader {
   }
 
   Uint8List readBytes(int length) {
+    if (_offset + length > _data.length) {
+      throw Exception(
+        'Read bytes out of bounds: need ${_offset + length} bytes, have ${_data.length}',
+      );
+    }
     final bytes = _data.sublist(_offset, _offset + length);
     _offset += length;
     return bytes;

@@ -9,6 +9,13 @@ class VarInt {
     int currentByte;
 
     while (true) {
+      // CRITICAL: Check bounds before accessing array
+      if (offset >= data.length) {
+        throw Exception(
+          'VarInt read out of bounds: offset $offset >= length ${data.length}',
+        );
+      }
+
       currentByte = data[offset];
       value |= (currentByte & 0x7F) << (position * 7);
 
@@ -20,7 +27,7 @@ class VarInt {
       position++;
 
       if (position >= 5) {
-        throw Exception('VarInt is too long');
+        throw Exception('VarInt is too long (max 5 bytes)');
       }
     }
 
@@ -28,7 +35,20 @@ class VarInt {
   }
 
   static int write(Uint8List buffer, int offset, int value) {
+    // Validate value is non-negative
+    if (value < 0) {
+      throw Exception('VarInt cannot be negative: $value');
+    }
+
     int position = 0;
+    final expectedSize = getSize(value);
+
+    // CRITICAL: Check bounds before writing
+    if (offset + expectedSize > buffer.length) {
+      throw Exception(
+        'VarInt write out of bounds: need ${offset + expectedSize} bytes, have ${buffer.length}',
+      );
+    }
 
     while (true) {
       int byte = value & 0x7F;
@@ -46,7 +66,7 @@ class VarInt {
       }
 
       if (position >= 5) {
-        throw Exception('VarInt is too long');
+        throw Exception('VarInt is too long (max 5 bytes)');
       }
     }
 

@@ -8,9 +8,33 @@ class Packet {
   Packet({required this.id, required this.data});
 
   factory Packet.fromBytes(Uint8List bytes) {
+    // CRITICAL: Validate buffer has minimum size before reading
+    if (bytes.isEmpty) {
+      throw Exception('Packet is empty');
+    }
+
+    // Read packet length VarInt
+    if (bytes.length < 1) {
+      throw Exception(
+        'Packet too short: need at least 1 byte for length, got ${bytes.length}',
+      );
+    }
     final packetLength = VarInt.read(bytes, 0);
     final packetLengthSize = VarInt.getSize(packetLength);
 
+    // Validate packet length is reasonable
+    if (packetLength < 0 || packetLength > 2097152) {
+      throw Exception(
+        'Invalid packet length: $packetLength (must be 0-2097152)',
+      );
+    }
+
+    // Read packet ID VarInt
+    if (bytes.length < packetLengthSize + 1) {
+      throw Exception(
+        'Packet too short: need at least ${packetLengthSize + 1} bytes for packet ID, got ${bytes.length}',
+      );
+    }
     final packetId = VarInt.read(bytes, packetLengthSize);
     final packetIdSize = VarInt.getSize(packetId);
 
@@ -43,13 +67,38 @@ class Packet {
     final buffer = Uint8List(packetLengthSize + packetLength);
 
     // Write packet length (VarInt)
-    VarInt.write(buffer, 0, packetLength);
+    final writtenLengthSize = VarInt.write(buffer, 0, packetLength);
+    if (writtenLengthSize != packetLengthSize) {
+      throw Exception(
+        'VarInt length size mismatch: expected $packetLengthSize, wrote $writtenLengthSize',
+      );
+    }
 
     // Write packet ID (VarInt)
-    VarInt.write(buffer, packetLengthSize, id);
+    final writtenIdSize = VarInt.write(buffer, packetLengthSize, id);
+    if (writtenIdSize != packetIdSize) {
+      throw Exception(
+        'VarInt ID size mismatch: expected $packetIdSize, wrote $writtenIdSize',
+      );
+    }
 
     // Write packet data
-    buffer.setRange(packetLengthSize + packetIdSize, buffer.length, data);
+    final dataStart = packetLengthSize + packetIdSize;
+    final dataEnd = dataStart + data.length;
+    if (dataEnd > buffer.length) {
+      throw Exception(
+        'Packet data overflow: need $dataEnd bytes, buffer has ${buffer.length}',
+      );
+    }
+    buffer.setRange(dataStart, dataEnd, data);
+
+    // Verify total size matches expected
+    final expectedTotalSize = packetLengthSize + packetLength;
+    if (buffer.length != expectedTotalSize) {
+      throw Exception(
+        'Packet size mismatch: expected $expectedTotalSize bytes, got ${buffer.length}',
+      );
+    }
 
     return buffer;
   }
