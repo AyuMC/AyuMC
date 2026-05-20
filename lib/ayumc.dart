@@ -1,5 +1,4 @@
 import 'package:ayu_core/ayu_core.dart';
-import 'package:ayu_core/test_plugins/test_plugin.dart';
 
 void main() async {
   final server = AyuServer();

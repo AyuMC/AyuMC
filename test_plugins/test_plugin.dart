@@ -3,11 +3,11 @@ import 'package:ayu_plugin_api/ayu_plugin_api.dart';
 class TestPlugin extends AyuPlugin {
   @override
   void onEnable() {
-    logger.info('TestPlugin enabled!');
+    logger.info("Hello from TestPlugin!");
   }
 
   @override
   void onDisable() {
-    logger.warn('TestPlugin disabled!');
+    logger.warn("Goodbye from TestPlugin!");
   }
 }

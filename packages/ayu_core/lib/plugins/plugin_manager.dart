@@ -7,17 +7,18 @@ class PluginManager {
   final List<AyuPlugin> _plugins = [];
 
   void register(AyuPlugin plugin) {
-    plugin.logger = Logger(plugin.runtimeType.toString());
+    plugin.logger = PluginLogger(plugin.runtimeType.toString());
 
     _plugins.add(plugin);
 
     logger.info('Registered plugin: ${plugin.runtimeType}');
+
+    plugin.onLoad();
   }
 
   void enableAll() {
     for (final plugin in _plugins) {
       plugin.onEnable();
-
       logger.info('Enabled plugin: ${plugin.runtimeType}');
     }
   }
@@ -25,8 +26,9 @@ class PluginManager {
   void disableAll() {
     for (final plugin in _plugins) {
       plugin.onDisable();
-
       logger.warn('Disabled plugin: ${plugin.runtimeType}');
     }
   }
+
+  List<AyuPlugin> get plugins => _plugins;
 }

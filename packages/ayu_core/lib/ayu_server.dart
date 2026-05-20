@@ -1,11 +1,11 @@
 import 'package:ayu_commands/command.dart';
 import 'package:ayu_commands/command_manager.dart';
 import 'package:ayu_core/events/server_started_event.dart';
-import 'package:ayu_core/plugins/plugin_manager.dart';
 import 'package:ayu_events/event_bus.dart';
 import 'package:ayu_logging/logger.dart';
 import 'ayu_lifecycle.dart';
 import 'ayu_states.dart';
+import 'plugins/plugin_manager.dart';
 
 class AyuServer {
   final EventBus events = EventBus();
@@ -17,6 +17,7 @@ class AyuServer {
   Future<void> start() async {
     lifecycle.setState(ServerState.starting);
     logger.info('Server starting...');
+    plugins.enableAll();
     commands.register(
       Command(
         name: 'ping',
@@ -37,7 +38,6 @@ class AyuServer {
       ),
     );
     await Future.delayed(Duration(seconds: 1));
-    plugins.enableAll();
     logger.info('Server Started.');
     events.emit(ServerStartedEvent());
     lifecycle.setState(ServerState.running);
