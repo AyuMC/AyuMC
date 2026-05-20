@@ -16,6 +16,8 @@ dependencies:
     path: packages/ayu_logging
   ayu_commands:
     path: packages/ayu_commands
+  ayu_events:
+    path: packages/ayu_events
 
 dev_dependencies:
   lints: ^6.0.0

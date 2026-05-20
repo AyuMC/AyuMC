@@ -47,6 +47,13 @@ packages:
       relative: true
     source: path
     version: "1.0.0"
+  ayu_events:
+    dependency: "direct main"
+    description:
+      path: "packages/ayu_events"
+      relative: true
+    source: path
+    version: "1.0.0"
   ayu_logging:
     dependency: "direct main"
     description:
