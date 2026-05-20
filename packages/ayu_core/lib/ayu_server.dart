@@ -1,6 +1,7 @@
 import 'package:ayu_commands/command.dart';
 import 'package:ayu_commands/command_manager.dart';
 import 'package:ayu_core/events/server_started_event.dart';
+import 'package:ayu_core/plugins/plugin_manager.dart';
 import 'package:ayu_events/event_bus.dart';
 import 'package:ayu_logging/logger.dart';
 import 'ayu_lifecycle.dart';
@@ -9,6 +10,7 @@ import 'ayu_states.dart';
 class AyuServer {
   final EventBus events = EventBus();
   final Logger logger = Logger('AyuMC');
+  final PluginManager plugins = PluginManager();
   final ServerLifecycle lifecycle = ServerLifecycle();
   final CommandManager commands = CommandManager();
 
@@ -35,6 +37,7 @@ class AyuServer {
       ),
     );
     await Future.delayed(Duration(seconds: 1));
+    plugins.enableAll();
     logger.info('Server Started.');
     events.emit(ServerStartedEvent());
     lifecycle.setState(ServerState.running);
@@ -43,6 +46,7 @@ class AyuServer {
   Future<void> stop() async {
     lifecycle.setState(ServerState.stopping);
     logger.info('Server stopping...');
+    plugins.disableAll();
     await Future.delayed(Duration(seconds: 1));
     logger.warn('Server stopped.');
     lifecycle.setState(ServerState.stopped);

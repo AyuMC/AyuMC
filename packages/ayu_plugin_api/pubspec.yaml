@@ -1,4 +1,4 @@
-name: ayu_core
+name: ayu_plugin_api
 description: A starting point for Dart libraries or applications.
 version: 1.0.0
 publish_to: none
@@ -12,12 +12,6 @@ dependencies:
   # path: ^1.9.0
   ayu_logging:
     path: ../ayu_logging/
-  ayu_commands:
-    path: ../ayu_commands/
-  ayu_events:
-    path: ../ayu_events/
-  ayu_plugin_api:
-    path: ../ayu_plugin_api/
 
 dev_dependencies:
   lints: ^6.0.0

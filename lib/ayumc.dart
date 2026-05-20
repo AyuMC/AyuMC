@@ -1,16 +1,12 @@
 import 'package:ayu_core/ayu_core.dart';
-import 'package:ayu_core/events/server_started_event.dart';
+import 'package:ayu_core/test_plugins/test_plugin.dart';
 
 void main() async {
   final server = AyuServer();
 
-  server.events.listen<ServerStartedEvent>((event) {
-    print('SERVER START EVENT RECEIVED!');
-  });
-  await server.start();
+  server.plugins.register(TestPlugin());
 
-  server.commands.execute('ping');
-  server.commands.execute('say hello world');
+  await server.start();
 
   await Future.delayed(Duration(seconds: 3));
 

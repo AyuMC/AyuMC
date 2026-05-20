@@ -18,6 +18,8 @@ dependencies:
     path: packages/ayu_commands
   ayu_events:
     path: packages/ayu_events
+  ayu_plugin_api:
+    path: packages/ayu_plugin_api
 
 dev_dependencies:
   lints: ^6.0.0

@@ -61,6 +61,13 @@ packages:
       relative: true
     source: path
     version: "1.0.0"
+  ayu_plugin_api:
+    dependency: "direct main"
+    description:
+      path: "packages/ayu_plugin_api"
+      relative: true
+    source: path
+    version: "1.0.0"
   boolean_selector:
     dependency: transitive
     description:
