@@ -1,8 +1,8 @@
-name: ayu_core
+name: ayu_commands
 description: A starting point for Dart libraries or applications.
 version: 1.0.0
-publish_to: none
 # repository: https://github.com/my_org/my_repo
+publish_to: none
 
 environment:
   sdk: ^3.11.5
@@ -12,8 +12,6 @@ dependencies:
   # path: ^1.9.0
   ayu_logging:
     path: ../ayu_logging/
-  ayu_commands:
-    path: ../ayu_commands/
 
 dev_dependencies:
   lints: ^6.0.0

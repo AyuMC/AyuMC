@@ -33,6 +33,13 @@ packages:
       url: "https://mirror-flutter.runflare.com"
     source: hosted
     version: "2.13.1"
+  ayu_commands:
+    dependency: "direct main"
+    description:
+      path: "packages/ayu_commands"
+      relative: true
+    source: path
+    version: "1.0.0"
   ayu_core:
     dependency: "direct main"
     description:
