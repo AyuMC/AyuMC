@@ -1,7 +1,7 @@
-
+import 'package:ayu_core/ayu_core.dart';
 
 void main() async {
-  final server = AyuServer;
+  final server = AyuServer();
 
   await server.start();
 

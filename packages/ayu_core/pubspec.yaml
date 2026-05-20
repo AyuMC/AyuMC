@@ -1,5 +1,5 @@
-name: ayumc
-description: A sample command-line application.
+name: ayu_core
+description: A starting point for Dart libraries or applications.
 version: 1.0.0
 publish_to: none
 # repository: https://github.com/my_org/my_repo
@@ -9,11 +9,9 @@ environment:
 
 # Add regular dependencies here.
 dependencies:
-  path: ^1.9.0
-  ayu_core:
-    path: packages/ayu_core
+  # path: ^1.9.0
   ayu_logging:
-    path: packages/ayu_logging
+    path: ../ayu_logging/
 
 dev_dependencies:
   lints: ^6.0.0

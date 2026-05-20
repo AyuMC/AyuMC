@@ -1,4 +1,4 @@
-import 'states.dart';
+import 'ayu_states.dart';
 
 class ServerLifecycle {
   ServerState _state = ServerState.stopped;
@@ -7,7 +7,5 @@ class ServerLifecycle {
 
   void setState(ServerState newState) {
     _state = newState;
-
-    print('[AyuMC - Lifecycle] -> $newState');
   }
 }
