@@ -1,0 +1,11 @@
+
+
+void main() async {
+  final server = AyuServer;
+
+  await server.start();
+
+  await Future.delayed(Duration(seconds: 3));
+
+  await server.stop();
+}
