@@ -56,6 +56,18 @@ void main() async {
 
   final plugins = discovery.discover();
 
+  final resolver = PluginDependencyResolver();
+
+  final result = resolver.resolve(plugins);
+
+  if (!result.success) {
+    print('Missing dependencies:');
+
+    for (final error in result.missingDependencies) {
+      print(error);
+    }
+  }
+
   /// This loop iterates through the list of discovered plugins and logs their name,
   ///  version, and main entry point using the logger instance. Each plugin's information is printed in a formatted string for easy readability.
   /// Example output:
