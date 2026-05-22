@@ -1,8 +1,9 @@
 import 'dart:io';
-import 'package:ayu_core/ayu_core.dart';
 import 'package:ayu_logging/logger.dart';
+import 'package:ayu_core/ayu_core.dart';
 import 'package:ayumc/test_plugins/test_plugin.dart';
 import 'package:ayu_core/plugins/plugin_discovery.dart';
+import 'package:ayu_core/plugins/plugin_dependency_resolver.dart';
 
 void main() async {
   /// This is Create an instance of AyuServer
