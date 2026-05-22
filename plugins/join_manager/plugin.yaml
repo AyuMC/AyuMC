@@ -1,3 +1,8 @@
 name: JoinManager
 version: 1.0.0
 main: join_manager
+author: FORGE096
+description: A plugin that manages the joining process of the application.
+website:
+apiVersion: 1.0.0
+dependencies:

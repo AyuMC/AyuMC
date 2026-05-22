@@ -1,3 +1,9 @@
 name: LeftManager
 version: 1.0.0
 main: left_manager
+author: FORGE096
+description: A plugin that manages the left side of the application.
+website:
+apiVersion: 1.0.0
+dependencies:
+  - join_manager: ^1.0.0
