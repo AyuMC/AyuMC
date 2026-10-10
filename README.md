@@ -1,8 +1,9 @@
 # AyuMC
 
-A Minecraft server platform written in Dart with a process-isolated plugin
-system. The server core (protocol, worlds, players) is not implemented yet;
-the plugin platform is.
+A Minecraft server platform written in Dart. The first profile is
+`AyuMC-1.8.9-release` (Java Edition 1.8.9, protocol 47). Gameplay events are
+not built in: administrators install optional `.ayu` event packs. See
+`docs/modular-platform.md` (Persian) and `docs/plugin-platform.md`.
 
 ## Layout
 

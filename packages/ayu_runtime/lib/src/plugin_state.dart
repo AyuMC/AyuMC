@@ -25,7 +25,11 @@ enum PluginState {
   failed,
 
   /// Worker exited while active. No worker. Restart may be pending.
-  crashed;
+  crashed,
+
+  /// Enabled, but a required contract lost its provider. No worker. Starts
+  /// again automatically when the contract becomes available.
+  suspended;
 
   bool get hasWorker => this == starting || this == active || this == stopping;
 }
@@ -46,13 +50,14 @@ abstract final class PluginStateMachine {
   static const Map<PluginState, Set<PluginState>> allowed = {
     PluginState.discovered: {PluginState.validating, PluginState.disabled, PluginState.failed},
     PluginState.validating: {PluginState.staged, PluginState.failed},
-    PluginState.staged: {PluginState.starting, PluginState.disabled},
+    PluginState.staged: {PluginState.starting, PluginState.disabled, PluginState.suspended},
     PluginState.starting: {PluginState.active, PluginState.failed},
     PluginState.active: {PluginState.stopping, PluginState.crashed},
-    PluginState.stopping: {PluginState.disabled, PluginState.failed},
-    PluginState.disabled: {PluginState.starting, PluginState.validating},
-    PluginState.failed: {PluginState.starting, PluginState.disabled, PluginState.validating},
-    PluginState.crashed: {PluginState.starting, PluginState.disabled, PluginState.validating},
+    PluginState.stopping: {PluginState.disabled, PluginState.suspended, PluginState.failed},
+    PluginState.disabled: {PluginState.starting, PluginState.validating, PluginState.suspended},
+    PluginState.failed: {PluginState.starting, PluginState.disabled, PluginState.validating, PluginState.suspended},
+    PluginState.crashed: {PluginState.starting, PluginState.disabled, PluginState.validating, PluginState.suspended},
+    PluginState.suspended: {PluginState.starting, PluginState.disabled, PluginState.validating},
   };
 
   static bool canTransition(PluginState from, PluginState to) => allowed[from]!.contains(to);

@@ -11,6 +11,12 @@ enum PluginHostErrorCode {
   commandNotFound,
   commandFailed,
   configInvalid,
+
+  /// An event pack would provide a contract another active pack provides.
+  conflict,
+
+  /// Required event contracts have no compatible active provider.
+  contractUnavailable,
 }
 
 /// Failure of a host operation. [details] carries actionable specifics such

@@ -32,6 +32,10 @@ final class PluginInstance {
   String get id => manifest.id;
   Version get version => manifest.version;
   PluginState get state => _state;
+  bool get isEventPack => manifest.isEventPack;
+
+  /// Whether this pack's contracts are currently registered as available.
+  bool providerRegistered = false;
 
   /// Applies a validated transition and returns the previous state.
   PluginState transition(PluginState to) {
@@ -42,7 +46,11 @@ final class PluginInstance {
   }
 
   /// Records restarts and tells whether another one fits the budget.
-  bool consumeRestartBudget({required int maxRestarts, required Duration window, required DateTime now}) {
+  bool consumeRestartBudget({
+    required int maxRestarts,
+    required Duration window,
+    required DateTime now,
+  }) {
     restartTimes.removeWhere((t) => now.difference(t) > window);
     if (restartTimes.length >= maxRestarts) return false;
     restartTimes.add(now);
@@ -56,20 +64,34 @@ final class PluginInstance {
   }
 
   PluginSnapshot snapshot({required bool enabled}) => PluginSnapshot(
-        id: id,
-        name: manifest.name,
-        version: version,
-        state: _state,
-        enabled: enabled,
-        installDirectory: installDirectory.path,
-        dataDirectory: dataDirectory.path,
-        capabilities: manifest.capabilities,
-        dependencies: [for (final d in manifest.dependencies) '${d.id} ${d.version}${d.optional ? ' (optional)' : ''}'],
-        pid: worker?.hasExited == false ? worker!.pid : null,
-        restartCount: restartTimes.length,
-        droppedEvents: droppedEvents,
-        lastError: lastError,
-        lastExitCode: lastExitCode,
-        stderrTail: lastStderrTail,
-      );
+    id: id,
+    name: manifest.name,
+    version: version,
+    packageType: manifest.packageType,
+    provides: [
+      for (final c in manifest.provides)
+        '${c.id} ${c.version} (${c.delivery.mode.name})',
+    ],
+    requiredContracts: [
+      for (final e in manifest.requiredEvents) '${e.id} ${e.version}',
+    ],
+    optionalContracts: [
+      for (final e in manifest.optionalEvents) '${e.id} ${e.version}',
+    ],
+    state: _state,
+    enabled: enabled,
+    installDirectory: installDirectory.path,
+    dataDirectory: dataDirectory.path,
+    capabilities: manifest.capabilities,
+    dependencies: [
+      for (final d in manifest.dependencies)
+        '${d.id} ${d.version}${d.optional ? ' (optional)' : ''}',
+    ],
+    pid: worker?.hasExited == false ? worker!.pid : null,
+    restartCount: restartTimes.length,
+    droppedEvents: droppedEvents,
+    lastError: lastError,
+    lastExitCode: lastExitCode,
+    stderrTail: lastStderrTail,
+  );
 }

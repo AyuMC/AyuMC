@@ -7,8 +7,10 @@ import 'package:ayu_logging/ayu_logging.dart';
 import 'package:ayu_package/ayu_package.dart';
 import 'package:path/path.dart' as p;
 
+import 'contract_registry.dart';
 import 'dart_runtime.dart';
 import 'errors.dart';
+import 'event_platform.dart';
 import 'host_events.dart';
 import 'host_registry.dart';
 import 'plugin_instance.dart';
@@ -17,12 +19,16 @@ import 'runtime_options.dart';
 import 'worker_launcher.dart';
 import 'worker_process.dart';
 
-/// Starts and stops the worker of one plugin and serves the requests that
+/// Starts and stops the worker of one package and serves the requests that
 /// worker makes. State transitions on the instance happen here; policy
-/// (locks, dependencies, restarts, persistence) lives in `PluginHost`.
+/// (locks, dependencies, providers, restarts, persistence) lives in
+/// `PluginHost`.
 final class WorkerController {
   WorkerController({
     required this.registry,
+    required this.contracts,
+    required this.dispatcher,
+    required this.primitives,
     required this.options,
     required this.launcher,
     required this.log,
@@ -33,6 +39,9 @@ final class WorkerController {
   });
 
   final HostRegistry registry;
+  final ContractRegistry contracts;
+  final EventDispatcher dispatcher;
+  final PrimitiveBus primitives;
   final PluginRuntimeOptions options;
   final WorkerLauncher launcher;
   final Logger log;
@@ -51,7 +60,7 @@ final class WorkerController {
     final artifact = instance.manifest.artifactFor(runtime.target);
     if (artifact == null) {
       throw PluginHostException(PluginHostErrorCode.incompatible,
-          'plugin "${instance.id}" has no artifact for ${runtime.target}');
+          'package "${instance.id}" has no artifact for ${runtime.target}');
     }
     _move(instance, PluginState.starting);
     WorkerProcess? worker;
@@ -65,6 +74,7 @@ final class WorkerController {
       ));
       await instance.dataDirectory.create(recursive: true);
       final config = await loadConfig(instance);
+      if (!instance.isEventPack) contracts.declareRequirements(instance.id, instance.manifest.events);
       worker = await WorkerProcess.start(spec,
           options: options, log: log, debugName: instance.id, hostVersion: hostVersion);
       instance.worker = worker;
@@ -92,9 +102,14 @@ final class WorkerController {
       }
       instance.lastError = null;
       _move(instance, PluginState.active);
+      if (instance.isEventPack) {
+        primitives.attach(instance);
+      } else {
+        dispatcher.attach(instance);
+      }
     } on WorkerStartException catch (e) {
       await _abortStart(instance, worker, e.message, e.exitCode, e.stderrTail);
-      throw PluginHostException(PluginHostErrorCode.startFailed, 'plugin "${instance.id}" failed to start: ${e.message}',
+      throw PluginHostException(PluginHostErrorCode.startFailed, 'package "${instance.id}" failed to start: ${e.message}',
           details: [if (e.exitCode != null) 'exit code ${e.exitCode}', if (e.stderrTail.isNotEmpty) 'stderr: ${e.stderrTail}']);
     } on PluginHostException catch (e) {
       await _abortStart(instance, worker, e.message, null, worker?.stderrTail ?? '');
@@ -103,11 +118,12 @@ final class WorkerController {
   }
 
   /// Removes registrations first so nothing is routed to the worker while it
-  /// shuts down, then terminates it. Returns the termination outcome; the
-  /// instance ends in `disabled`, or `failed` when the kill did not complete.
-  Future<TerminationOutcome> stop(PluginInstance instance, {required String reason}) async {
+  /// shuts down, then terminates it. The instance ends in [endState]
+  /// (`disabled` or `suspended`), or `failed` when the kill did not complete.
+  Future<TerminationOutcome> stop(PluginInstance instance,
+      {required String reason, PluginState endState = PluginState.disabled}) async {
     _move(instance, PluginState.stopping);
-    registry.removeAll(instance.id);
+    _releaseRegistrations(instance);
     final worker = instance.worker;
     var outcome = TerminationOutcome.alreadyExited;
     if (worker != null) {
@@ -121,13 +137,13 @@ final class WorkerController {
       instance.lastError = 'worker pid ${worker!.pid} could not be terminated; it is no longer routed to';
       _move(instance, PluginState.failed, error: instance.lastError);
     } else {
-      _move(instance, PluginState.disabled);
+      _move(instance, endState, error: endState == PluginState.suspended ? instance.lastError : null);
     }
     return outcome;
   }
 
-  /// Configuration handed to the plugin: `data/<id>/config.json` when the
-  /// user created one, otherwise the package's `config/config.json`,
+  /// Configuration handed to the package: `data/<id>/config.json` when the
+  /// operator created one, otherwise the package's `config/config.json`,
   /// otherwise empty.
   Future<Map<String, Object?>> loadConfig(PluginInstance instance) async {
     final candidates = [
@@ -150,7 +166,7 @@ final class WorkerController {
   /// Serves worker -> host requests. Capability checks happen here.
   Future<Object?> handleWorkerRequest(PluginInstance instance, String method, Object? params) async {
     if (instance.state != PluginState.starting && instance.state != PluginState.active) {
-      throw IpcException.code(IpcErrorCode.unavailable, 'plugin is ${instance.state.name}');
+      throw IpcException.code(IpcErrorCode.unavailable, 'package is ${instance.state.name}');
     }
     switch (method) {
       case IpcMethod.commandRegister:
@@ -163,11 +179,19 @@ final class WorkerController {
         return null;
       case IpcMethod.eventSubscribe:
         _requireCapability(instance, PluginCapability.events);
-        registry.subscribe(instance.id, EventSubscriptionSpec.fromJson(params).type);
+        contracts.subscribe(instance.id, EventSubscriptionSpec.fromJson(params).type);
         return null;
       case IpcMethod.eventUnsubscribe:
         _requireCapability(instance, PluginCapability.events);
-        registry.unsubscribe(instance.id, EventSubscriptionSpec.fromJson(params).type);
+        contracts.unsubscribe(instance.id, EventSubscriptionSpec.fromJson(params).type);
+        return null;
+      case IpcMethod.observeSubscribe:
+        _requireCapability(instance, PluginCapability.observe);
+        contracts.subscribePrimitive(instance.id, PrimitiveSubscriptionSpec.fromJson(params).id, instance.manifest);
+        return null;
+      case IpcMethod.observeUnsubscribe:
+        _requireCapability(instance, PluginCapability.observe);
+        contracts.unsubscribePrimitive(instance.id, PrimitiveSubscriptionSpec.fromJson(params).id);
         return null;
       case IpcMethod.configGet:
         _requireCapability(instance, PluginCapability.config);
@@ -182,8 +206,29 @@ final class WorkerController {
   }
 
   void _handleNotification(PluginInstance instance, String method, Object? params) {
-    if (method != IpcMethod.log) return;
-    final entry = LogNotification.fromJson(params);
+    switch (method) {
+      case IpcMethod.log:
+        _handleLog(instance, LogNotification.fromJson(params));
+      case IpcMethod.eventPublish:
+        if (_canPublish(instance)) dispatcher.publish(instance.id, PublishedEvent.fromJson(params));
+      case IpcMethod.eventPublishBatch:
+        if (_canPublish(instance)) {
+          for (final event in PublishedEventBatch.fromJson(params).items) {
+            dispatcher.publish(instance.id, event);
+          }
+        }
+    }
+  }
+
+  bool _canPublish(PluginInstance instance) {
+    if (!instance.manifest.capabilities.contains(PluginCapability.publish)) {
+      log.warn('[${instance.id}] published without the "publish" capability; ignored');
+      return false;
+    }
+    return instance.state == PluginState.active && instance.providerRegistered;
+  }
+
+  void _handleLog(PluginInstance instance, LogNotification entry) {
     final timestamp = entry.timestampMillis == null
         ? DateTime.now()
         : DateTime.fromMillisecondsSinceEpoch(entry.timestampMillis!);
@@ -204,9 +249,23 @@ final class WorkerController {
     onUnexpectedExit(instance, code);
   }
 
+  /// Host-side cleanup that must happen the moment a package leaves the
+  /// active state. Provider deregistration is the host's job.
+  void releaseRegistrations(PluginInstance instance) => _releaseRegistrations(instance);
+
+  void _releaseRegistrations(PluginInstance instance) {
+    registry.removeAll(instance.id);
+    if (instance.isEventPack) {
+      primitives.detach(instance.id);
+    } else {
+      contracts.removeConsumer(instance.id);
+      dispatcher.detach(instance.id);
+    }
+  }
+
   Future<void> _abortStart(
       PluginInstance instance, WorkerProcess? worker, String message, int? exitCode, String stderrTail) async {
-    registry.removeAll(instance.id);
+    _releaseRegistrations(instance);
     if (worker != null) {
       await worker.kill();
       instance.lastExitCode = worker.exitCode;
@@ -224,7 +283,7 @@ final class WorkerController {
   void _requireCapability(PluginInstance instance, String capability) {
     if (!instance.manifest.capabilities.contains(capability)) {
       throw IpcException.code(IpcErrorCode.capabilityDenied,
-          'plugin "${instance.id}" did not declare the "$capability" capability');
+          'package "${instance.id}" did not declare the "$capability" capability');
     }
   }
 

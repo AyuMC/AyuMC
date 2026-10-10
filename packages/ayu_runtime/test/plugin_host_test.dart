@@ -17,7 +17,8 @@ void main() {
   late PluginHost host;
 
   PluginHost newHost({PluginRuntimeOptions options = fastOptions}) => PluginHost(
-        rootDirectory: Directory(p.join(temp.path, 'plugins')),
+        rootDirectory: temp,
+        profileId: testProfileId,
         options: options,
         runtime: jitRuntime,
         launcher: const JitFixtureLauncher(),
@@ -48,15 +49,18 @@ void main() {
     expect(snapshot.enabled, isTrue);
     expect(snapshot.pid, isNotNull);
     expect(Directory(snapshot.installDirectory).existsSync(), isTrue);
-    expect(host.layout.staging.listSync(), isEmpty, reason: 'staging is cleaned after commit');
+    expect(host.layout.plugins.staging.listSync(), isEmpty, reason: 'staging is cleaned after commit');
 
     final echo = await host.executeCommand('echo', ['hello', 'world']);
     expect(echo.message, 'hello world');
     expect((await host.executeCommand('say', ['alias'])).message, 'alias');
 
-    expect(host.emitEvent('test.event', {'n': 1}), 1);
-    expect(host.emitEvent('other.event', {}), 0);
-    expect((await host.executeCommand('events', [])).message, '1');
+    host.contracts.registerProvider('test_source', [
+      EventContractSpec(id: 'test.event', version: Version(1, 0, 0), delivery: const DeliverySpec()),
+    ]);
+    expect(host.dispatcher.publish('test_source', const PublishedEvent(contract: 'test.event', data: {'n': 1})), 1);
+    expect(host.dispatcher.publish('test_source', const PublishedEvent(contract: 'other.event', data: {})), 0);
+    await _until(() async => (await host.executeCommand('events', [])).message == '1');
 
     await Future<void>.delayed(Duration.zero);
     expect(states.map((s) => s.to), containsAllInOrder([PluginState.staged, PluginState.starting, PluginState.active]));
@@ -87,7 +91,7 @@ void main() {
     expect(disabled.pid, isNull);
     expect(disabled.lastExitCode, 0);
     expect(host.registry.commands, isEmpty);
-    expect(host.emitEvent('test.event', {}), 0);
+    expect(host.dispatcher.publish('test_source', const PublishedEvent(contract: 'test.event', data: {})), 0);
     await expectLater(host.executeCommand('echo', ['x']),
         throwsA(isA<PluginHostException>().having((e) => e.code, 'code', PluginHostErrorCode.commandNotFound)));
     expect(await processGone(firstPid), isTrue);
@@ -106,7 +110,7 @@ void main() {
     await host.uninstall('epsilon');
     expect(host.plugin('epsilon'), isNull);
     expect(Directory(snapshot.installDirectory).existsSync(), isFalse);
-    expect(host.layout.pluginDirectory('epsilon').existsSync(), isFalse);
+    expect(host.layout.plugins.pluginDirectory('epsilon').existsSync(), isFalse);
     expect(File(p.join(data.path, 'keep.txt')).existsSync(), isTrue);
     expect(await processGone(snapshot.pid!), isTrue);
 
@@ -141,7 +145,7 @@ void main() {
     expect(restored.version, Version(1, 0, 0));
     expect(restored.state, PluginState.active);
     expect(Directory(v1.installDirectory).existsSync(), isTrue);
-    expect(host.layout.installDirectory('eta', Version(2, 0, 0)).existsSync(), isFalse);
+    expect(host.layout.plugins.installDirectory('eta', Version(2, 0, 0)).existsSync(), isFalse);
     expect((await host.executeCommand('echo', ['still here'])).message, 'still here');
   });
 
@@ -210,7 +214,7 @@ void main() {
           .having((e) => e.details.join(), 'details', contains('"alpha"'))),
     );
     expect(host.plugin('dependent'), isNull);
-    expect(host.layout.installed.listSync(), isEmpty, reason: 'nothing is staged before dependency checks pass');
+    expect(host.layout.plugins.installed.listSync(), isEmpty, reason: 'nothing is staged before dependency checks pass');
 
     await host.install(await pkg('alpha'));
     expect((await host.install(await pkg('dependent', fixtureName: 'worker_quiet', deps: needsAlpha))).state, PluginState.active);
@@ -253,8 +257,8 @@ void main() {
           .having((e) => e.code, 'code', PluginHostErrorCode.incompatible)
           .having((e) => e.message, 'message', contains('plugin API'))),
     );
-    expect(host.layout.installed.listSync(), isEmpty);
-    expect(host.layout.staging.listSync(), isEmpty);
+    expect(host.layout.plugins.installed.listSync(), isEmpty);
+    expect(host.layout.plugins.staging.listSync(), isEmpty);
   });
 
   test('a package that is not a valid archive is rejected cleanly', () async {
@@ -301,4 +305,13 @@ void main() {
     await host.enable('lambda');
     expect((await host.executeCommand('config', [])).message, 'from data');
   });
+}
+
+Future<void> _until(Future<bool> Function() condition) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 5));
+  while (DateTime.now().isBefore(deadline)) {
+    if (await condition()) return;
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+  fail('condition not met');
 }

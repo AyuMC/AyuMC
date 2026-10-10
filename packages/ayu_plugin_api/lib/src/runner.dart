@@ -153,6 +153,12 @@ final class _PluginRunner implements HostLink {
         return _shutdown(ShutdownRequest.fromJson(params));
       case IpcMethod.ping:
         return const <String, Object?>{};
+      case IpcMethod.eventDecide:
+        final decision = await _requireContext().events.judge(DecisionRequest.fromJson(params));
+        return decision.toResponse().toJson();
+      case IpcMethod.primitiveDecide:
+        final decision = await _requireContext().primitives.judge(DecisionRequest.fromJson(params));
+        return decision.toResponse().toJson();
       case IpcMethod.commandExecute:
         final context = _requireContext();
         final invocation = CommandInvocation.fromJson(params);
@@ -181,10 +187,29 @@ final class _PluginRunner implements HostLink {
   }
 
   void _handleNotification(String method, Object? params) {
-    if (method != IpcMethod.event) return;
     final context = _context;
     if (context == null) return;
-    unawaited(context.events.dispatch(EventEnvelope.fromJson(params)));
+    switch (method) {
+      case IpcMethod.event:
+        unawaited(context.events.dispatch(EventEnvelope.fromJson(params)));
+      case IpcMethod.eventBatch:
+        unawaited(_dispatchSequentially(EventBatch.fromJson(params).items, context.events.dispatch));
+      case IpcMethod.primitive:
+        unawaited(context.primitives.dispatch(PrimitiveEnvelope.fromJson(params)));
+      case IpcMethod.primitiveBatch:
+        unawaited(_dispatchSequentially(PrimitiveBatch.fromJson(params).items, context.primitives.dispatch));
+      case IpcMethod.contractChanged:
+        context.events.notifyAvailability(ContractAvailability.fromJson(params));
+      case IpcMethod.deliveryGap:
+        context.events.notifyGap(DeliveryGap.fromJson(params));
+    }
+  }
+
+  /// Items of one batch keep their order relative to each other.
+  static Future<void> _dispatchSequentially<T>(List<T> items, Future<void> Function(T) dispatch) async {
+    for (final item in items) {
+      await dispatch(item);
+    }
   }
 
   Future<Object?> _init(InitRequest init) async {

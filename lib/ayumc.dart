@@ -14,7 +14,7 @@ export 'package:ayu_core/ayu_core.dart';
 /// Starts the server, serves console commands from stdin until `stop`,
 /// then shuts down. Returns the process exit code.
 Future<int> runServer({List<String> arguments = const []}) async {
-  final server = AyuServer(pluginDirectory: Directory(_pluginDirectoryFrom(arguments)));
+  final server = AyuServer(rootDirectory: Directory(_rootFrom(arguments)));
   await server.start();
 
   final done = Completer<void>();
@@ -47,8 +47,13 @@ Future<int> runServer({List<String> arguments = const []}) async {
   return 0;
 }
 
-String _pluginDirectoryFrom(List<String> arguments) {
-  final index = arguments.indexOf('--plugins');
-  if (index >= 0 && index + 1 < arguments.length) return arguments[index + 1];
-  return 'plugins';
+/// `--root` is the server directory (`plugins/`, `events/`, `config/`).
+/// `--plugins` is accepted as the same value so existing launch scripts keep
+/// working; it is no longer the plugin store itself.
+String _rootFrom(List<String> arguments) {
+  for (final flag in ['--root', '--plugins']) {
+    final index = arguments.indexOf(flag);
+    if (index >= 0 && index + 1 < arguments.length) return arguments[index + 1];
+  }
+  return '.';
 }

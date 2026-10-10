@@ -28,7 +28,11 @@ Future<void> main(List<String> args) async {
 
   final temp = await Directory.systemTemp.createTemp('ayu_bench_');
   final quiet = _QuietLogger();
-  final host = PluginHost(rootDirectory: Directory(p.join(temp.path, 'plugins')), logger: quiet);
+  final host = PluginHost(
+    rootDirectory: temp,
+    profileId: 'AyuMC-1.8.9-release',
+    logger: quiet,
+  );
   await host.start();
   if (host.runtime == null) {
     stderr.writeln('dartaotruntime not found; cannot benchmark');
@@ -73,11 +77,14 @@ Future<void> main(List<String> args) async {
     _report('command round trip (1000 sequential)', rtts);
 
     // Event fan-out to every active plugin.
+    host.contracts.registerProvider('bench_source', [
+      EventContractSpec(id: 'player.join', version: Version(1, 0, 0), delivery: const DeliverySpec()),
+    ]);
     const events = 20000;
     final fanout = Stopwatch()..start();
     var delivered = 0;
     for (var i = 0; i < events; i++) {
-      delivered += host.emitEvent('player.join', {'player': 'p$i'});
+      delivered += host.dispatcher.publish('bench_source', PublishedEvent(contract: 'player.join', data: {'player': 'p$i'}));
     }
     fanout.stop();
     await host.executeCommand(first.command('stats'), []); // drains the channel
@@ -132,6 +139,7 @@ Future<List<_Variant>> _clonePackage(File source, Directory temp, int count) asy
         api: opened.manifest.api,
         artifacts: {target.id: artifact},
         capabilities: opened.manifest.capabilities,
+        events: opened.manifest.events,
       );
       final file = File(p.join(temp.path, '$id.ayu'));
       await PackageWriter.write(output: file, manifest: manifest, entries: {

@@ -2,11 +2,15 @@
 # Created by `dart pub`
 .dart_tool/
 
-# Plugin store managed by the server at runtime
+# Package stores created when the server runs in this directory
 plugins/installed/
 plugins/staging/
 plugins/data/
 plugins/state.json*
+events/installed/
+events/staging/
+events/data/
+events/state.json*
 
 # Build outputs
 build/

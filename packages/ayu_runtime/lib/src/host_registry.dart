@@ -28,13 +28,12 @@ final class CommandUnregistered extends RegistryChange {
   final String name;
 }
 
-/// Everything plugins register with the host, indexed by owner so a plugin's
-/// registrations can be removed in one step the moment it stops.
+/// Commands packages register with the host, indexed by owner so a
+/// package's registrations can be removed in one step the moment it stops.
+/// Event subscriptions live in `ContractRegistry`.
 final class HostRegistry {
   final Map<String, RegisteredCommand> _commandsByName = {};
   final Map<String, Set<String>> _commandNamesByPlugin = {};
-  final Map<String, Set<String>> _subscribersByType = {};
-  final Map<String, Set<String>> _typesByPlugin = {};
   final StreamController<RegistryChange> _changes = StreamController.broadcast();
 
   Stream<RegistryChange> get changes => _changes.stream;
@@ -46,10 +45,6 @@ final class HostRegistry {
 
   List<RegisteredCommand> commandsOf(String pluginId) =>
       [for (final name in _commandNamesByPlugin[pluginId] ?? const <String>{}) _commandsByName[name]!];
-
-  Iterable<String> subscribers(String eventType) => _subscribersByType[eventType] ?? const <String>{};
-
-  Set<String> subscriptionsOf(String pluginId) => Set.unmodifiable(_typesByPlugin[pluginId] ?? const <String>{});
 
   void registerCommand(String pluginId, CommandSpec spec) {
     final keys = <String>[spec.name, ...spec.aliases].map((n) => n.toLowerCase()).toList();
@@ -87,33 +82,12 @@ final class HostRegistry {
     return true;
   }
 
-  void subscribe(String pluginId, String eventType) {
-    if (!PackageSpec.eventTypePattern.hasMatch(eventType)) {
-      throw IpcException.code(IpcErrorCode.invalidParams,
-          'event type "$eventType" is invalid (dot-separated lowercase identifiers)');
-    }
-    _subscribersByType.putIfAbsent(eventType, () => {}).add(pluginId);
-    _typesByPlugin.putIfAbsent(pluginId, () => {}).add(eventType);
-  }
-
-  bool unsubscribe(String pluginId, String eventType) {
-    final removed = _typesByPlugin[pluginId]?.remove(eventType) ?? false;
-    if (!removed) return false;
-    final subscribers = _subscribersByType[eventType]!..remove(pluginId);
-    if (subscribers.isEmpty) _subscribersByType.remove(eventType);
-    if (_typesByPlugin[pluginId]!.isEmpty) _typesByPlugin.remove(pluginId);
-    return true;
-  }
-
-  /// Removes every registration owned by [pluginId].
+  /// Removes every command owned by [pluginId].
   void removeAll(String pluginId) {
     for (final command in commandsOf(pluginId)) {
       _removeCommand(command);
     }
     _commandNamesByPlugin.remove(pluginId);
-    for (final type in List.of(_typesByPlugin[pluginId] ?? const <String>{})) {
-      unsubscribe(pluginId, type);
-    }
   }
 
   Future<void> dispose() => _changes.close();

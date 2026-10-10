@@ -38,6 +38,9 @@ final DartAotRuntime jitRuntime = DartAotRuntime(
 
 final Logger testLogger = Logger('test');
 
+/// Profile used by host tests. Packages with an empty profile list accept it.
+const testProfileId = 'AyuMC-1.8.9-release';
+
 /// Runs the fixture named in the manifest description (`fixture:<name>`)
 /// instead of the packaged artifact, so host-level tests exercise the full
 /// lifecycle without an AOT compile per test run.
@@ -68,6 +71,10 @@ Future<File> writeFixturePackage(
   RuntimeTarget? target,
   Version? dartSdk,
   String api = '^1.0.0',
+  PackageType packageType = PackageType.plugin,
+  List<String> profiles = const [],
+  List<EventContractSpec> provides = const [],
+  List<ContractRequirement>? events,
   Map<String, Uint8List> extraEntries = const {},
 }) async {
   final bytes = Uint8List.fromList('placeholder artifact for $id $version'.codeUnits);
@@ -86,6 +93,13 @@ Future<File> writeFixturePackage(
     artifacts: {artifact.target.id: artifact},
     dependencies: dependencies,
     capabilities: capabilities,
+    packageType: packageType,
+    profiles: profiles,
+    provides: provides,
+    events: events ??
+        (packageType == PackageType.plugin && capabilities.contains('events')
+            ? [ContractRequirement(id: 'test.event', version: VersionConstraint.parse('^1.0.0'), optional: true)]
+            : const []),
   );
   final file = File(p.join(dir.path, '$id-$version.ayu'));
   await PackageWriter.write(

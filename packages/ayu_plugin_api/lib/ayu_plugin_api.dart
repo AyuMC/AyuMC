@@ -11,11 +11,16 @@ export 'package:ayu_ipc/ayu_ipc.dart'
     show
         CommandInvocation,
         CommandResult,
+        ContractAvailability,
+        DecisionRequest,
+        DeliveryGap,
         EventEnvelope,
         IpcErrorCode,
         IpcException,
         PluginCapability,
-        PluginDescriptor;
+        PluginDescriptor,
+        PrimitiveEnvelope,
+        Verdict;
 
 export 'src/context.dart';
 export 'src/plugin.dart' hide attachContext;

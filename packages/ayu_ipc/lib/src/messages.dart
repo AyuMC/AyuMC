@@ -372,6 +372,215 @@ final class EventSubscriptionSpec {
   Map<String, Object?> toJson() => {'type': type};
 }
 
+/// Several events in one frame (host -> plugin).
+final class EventBatch {
+  EventBatch(List<EventEnvelope> items) : items = List.unmodifiable(items);
+
+  factory EventBatch.fromJson(Object? json) {
+    final map = JsonFields.object(json, 'event batch');
+    final raw = map['items'];
+    if (raw is! List) throw IpcException.code(IpcErrorCode.invalidParams, '"items" must be a list');
+    return EventBatch([for (final item in raw) EventEnvelope.fromJson(item)]);
+  }
+
+  final List<EventEnvelope> items;
+
+  Map<String, Object?> toJson() => {'items': [for (final e in items) e.toJson()]};
+}
+
+/// An internal primitive observation (host -> event pack).
+final class PrimitiveEnvelope {
+  const PrimitiveEnvelope({required this.id, required this.data, required this.timestampMillis});
+
+  factory PrimitiveEnvelope.fromJson(Object? json) {
+    final map = JsonFields.object(json, 'primitive');
+    return PrimitiveEnvelope(
+      id: JsonFields.string(map, 'id'),
+      data: JsonFields.optionalObject(map, 'data'),
+      timestampMillis: JsonFields.integer(map, 'ts'),
+    );
+  }
+
+  final String id;
+  final Map<String, Object?> data;
+  final int timestampMillis;
+
+  Map<String, Object?> toJson() => {'id': id, 'data': data, 'ts': timestampMillis};
+}
+
+final class PrimitiveBatch {
+  PrimitiveBatch(List<PrimitiveEnvelope> items) : items = List.unmodifiable(items);
+
+  factory PrimitiveBatch.fromJson(Object? json) {
+    final map = JsonFields.object(json, 'primitive batch');
+    final raw = map['items'];
+    if (raw is! List) throw IpcException.code(IpcErrorCode.invalidParams, '"items" must be a list');
+    return PrimitiveBatch([for (final item in raw) PrimitiveEnvelope.fromJson(item)]);
+  }
+
+  final List<PrimitiveEnvelope> items;
+
+  Map<String, Object?> toJson() => {'items': [for (final p in items) p.toJson()]};
+}
+
+/// Event pack -> host: a contract event. [timestampMillis] defaults to the
+/// host's receive time when omitted.
+final class PublishedEvent {
+  const PublishedEvent({required this.contract, required this.data, this.timestampMillis});
+
+  factory PublishedEvent.fromJson(Object? json) {
+    final map = JsonFields.object(json, 'published event');
+    return PublishedEvent(
+      contract: JsonFields.string(map, 'contract'),
+      data: JsonFields.optionalObject(map, 'data'),
+      timestampMillis: JsonFields.optionalInteger(map, 'ts'),
+    );
+  }
+
+  final String contract;
+  final Map<String, Object?> data;
+  final int? timestampMillis;
+
+  Map<String, Object?> toJson() => {
+    'contract': contract,
+    'data': data,
+    if (timestampMillis != null) 'ts': timestampMillis,
+  };
+}
+
+final class PublishedEventBatch {
+  PublishedEventBatch(List<PublishedEvent> items) : items = List.unmodifiable(items);
+
+  factory PublishedEventBatch.fromJson(Object? json) {
+    final map = JsonFields.object(json, 'published batch');
+    final raw = map['items'];
+    if (raw is! List) throw IpcException.code(IpcErrorCode.invalidParams, '"items" must be a list');
+    return PublishedEventBatch([for (final item in raw) PublishedEvent.fromJson(item)]);
+  }
+
+  final List<PublishedEvent> items;
+
+  Map<String, Object?> toJson() => {'items': [for (final e in items) e.toJson()]};
+}
+
+/// A decision awaiting a verdict. Used for host -> pack
+/// (`primitive.decide`, [id] is a primitive) and host -> plugin
+/// (`event.decide`, [id] is a contract).
+final class DecisionRequest {
+  const DecisionRequest({required this.id, required this.data, required this.budgetMillis});
+
+  factory DecisionRequest.fromJson(Object? json) {
+    final map = JsonFields.object(json, 'decision');
+    return DecisionRequest(
+      id: JsonFields.string(map, 'id'),
+      data: JsonFields.optionalObject(map, 'data'),
+      budgetMillis: JsonFields.integer(map, 'budgetMs'),
+    );
+  }
+
+  final String id;
+  final Map<String, Object?> data;
+
+  /// Time left for the whole decision when the request was sent.
+  final int budgetMillis;
+
+  Map<String, Object?> toJson() => {'id': id, 'data': data, 'budgetMs': budgetMillis};
+}
+
+/// Answer to a [DecisionRequest].
+///
+/// A plugin answers with a [verdict]. An event pack answers either with a
+/// verdict (veto / pass-through without consulting consumers) or with a
+/// translated [contract] + [data] for the host to put to the consumers.
+final class DecisionResponse {
+  const DecisionResponse.verdict(this.verdict, {this.reason})
+      : contract = null,
+        data = null;
+
+  const DecisionResponse.translate(String this.contract, Map<String, Object?> this.data)
+      : verdict = null,
+        reason = null;
+
+  factory DecisionResponse.fromJson(Object? json) {
+    final map = JsonFields.object(json, 'decision response');
+    final verdict = JsonFields.optionalString(map, 'verdict');
+    final contract = JsonFields.optionalString(map, 'contract');
+    if (verdict != null) {
+      if (!Verdict.all.contains(verdict)) {
+        throw IpcException.code(IpcErrorCode.invalidParams, 'unknown verdict "$verdict"');
+      }
+      return DecisionResponse.verdict(verdict, reason: JsonFields.optionalString(map, 'reason'));
+    }
+    if (contract != null) {
+      return DecisionResponse.translate(contract, JsonFields.optionalObject(map, 'data'));
+    }
+    throw IpcException.code(IpcErrorCode.invalidParams, 'decision response needs "verdict" or "contract"');
+  }
+
+  final String? verdict;
+  final String? reason;
+  final String? contract;
+  final Map<String, Object?>? data;
+
+  bool get isDeny => verdict == Verdict.deny;
+
+  Map<String, Object?> toJson() => {
+    if (verdict != null) 'verdict': verdict,
+    if (reason != null) 'reason': reason,
+    if (contract != null) 'contract': contract,
+    if (data != null) 'data': data,
+  };
+}
+
+/// Host -> plugin: an optional contract became (un)available.
+final class ContractAvailability {
+  const ContractAvailability({required this.id, required this.available, this.version});
+
+  factory ContractAvailability.fromJson(Object? json) {
+    final map = JsonFields.object(json, 'contract availability');
+    return ContractAvailability(
+      id: JsonFields.string(map, 'id'),
+      available: JsonFields.boolean(map, 'available'),
+      version: JsonFields.optionalString(map, 'version'),
+    );
+  }
+
+  final String id;
+  final bool available;
+  final String? version;
+
+  Map<String, Object?> toJson() => {'id': id, 'available': available, if (version != null) 'version': version};
+}
+
+/// Host -> plugin: [dropped] events of [type] were not delivered.
+final class DeliveryGap {
+  const DeliveryGap({required this.type, required this.dropped});
+
+  factory DeliveryGap.fromJson(Object? json) {
+    final map = JsonFields.object(json, 'delivery gap');
+    return DeliveryGap(type: JsonFields.string(map, 'type'), dropped: JsonFields.integer(map, 'dropped'));
+  }
+
+  final String type;
+  final int dropped;
+
+  Map<String, Object?> toJson() => {'type': type, 'dropped': dropped};
+}
+
+/// Event pack -> host (un)subscribe to an internal primitive.
+final class PrimitiveSubscriptionSpec {
+  const PrimitiveSubscriptionSpec(this.id);
+
+  factory PrimitiveSubscriptionSpec.fromJson(Object? json) {
+    final map = JsonFields.object(json, 'primitive subscription');
+    return PrimitiveSubscriptionSpec(JsonFields.string(map, 'id'));
+  }
+
+  final String id;
+
+  Map<String, Object?> toJson() => {'id': id};
+}
+
 /// Worker -> host unregister parameters.
 final class CommandNameSpec {
   const CommandNameSpec(this.name);

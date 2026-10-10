@@ -14,6 +14,12 @@ capabilities:
   - events
   - config
 dependencies: []
+events:
+  optional:
+    - id: player.join
+      version: "^1.0.0"
+    - id: server.started
+      version: "^1.0.0"
 assets:
   - assets
 config: config

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:pub_semver/pub_semver.dart';
 
+import 'contracts.dart';
 import 'errors.dart';
 import 'integrity.dart';
 import 'spec.dart';
@@ -92,10 +93,17 @@ final class PluginManifest {
     List<DependencySpec> dependencies = const [],
     Set<String> capabilities = const {},
     this.build,
+    this.packageType = PackageType.plugin,
+    List<String> profiles = const [],
+    List<EventContractSpec> provides = const [],
+    List<ContractRequirement> events = const [],
   })  : authors = List.unmodifiable(authors),
         artifacts = Map.unmodifiable(artifacts),
         dependencies = List.unmodifiable(dependencies),
-        capabilities = Set.unmodifiable(capabilities);
+        capabilities = Set.unmodifiable(capabilities),
+        profiles = List.unmodifiable(profiles),
+        provides = List.unmodifiable(provides),
+        events = List.unmodifiable(events);
 
   final int formatVersion;
   final String id;
@@ -118,10 +126,32 @@ final class PluginManifest {
   final Set<String> capabilities;
   final BuildInfo? build;
 
+  final PackageType packageType;
+
+  /// Server profile ids this package supports. Empty means any profile.
+  /// Event packs must name at least one, since they read protocol internals.
+  final List<String> profiles;
+
+  /// Contracts an event pack provides. Empty for plugins.
+  final List<EventContractSpec> provides;
+
+  /// Contracts a plugin consumes (required and optional).
+  final List<ContractRequirement> events;
+
+  bool get isEventPack => packageType == PackageType.eventPack;
+
   ArtifactSpec? artifactFor(RuntimeTarget target) => artifacts[target.id];
 
   Iterable<DependencySpec> get requiredDependencies =>
       dependencies.where((d) => !d.optional);
+
+  Iterable<ContractRequirement> get requiredEvents => events.where((e) => !e.optional);
+  Iterable<ContractRequirement> get optionalEvents => events.where((e) => e.optional);
+
+  /// Every internal primitive this pack's contracts draw from.
+  Set<String> get primitiveSources => {for (final c in provides) ...c.sources};
+
+  bool supportsProfile(String profileId) => profiles.isEmpty || profiles.contains(profileId);
 
   /// Parses and validates. Throws [PackageException] with
   /// [PackageErrorCode.manifestInvalid] listing every problem found.
@@ -163,7 +193,14 @@ final class PluginManifest {
     }
     final artifacts = v.artifacts('artifacts');
     final dependencies = v.dependencies('dependencies', selfId: id);
-    final capabilities = v.capabilities('capabilities');
+    final packageType = v.packageType('packageType');
+    final capabilities = v.capabilities('capabilities', packageType);
+    final profiles = v.stringList('profiles', maxLength: 128);
+    final provides = v.provides('provides', packageType);
+    final events = v.events('events', packageType);
+    if (packageType == PackageType.eventPack && profiles.isEmpty) {
+      v.problem('profiles', 'an event pack must name the server profile(s) it supports');
+    }
     final build = v.build('build');
     v.throwIfProblems();
     return PluginManifest(
@@ -181,14 +218,20 @@ final class PluginManifest {
       dependencies: dependencies,
       capabilities: capabilities,
       build: build,
+      packageType: packageType,
+      profiles: profiles,
+      provides: provides,
+      events: events,
     );
   }
 
   Map<String, Object?> toJson() => {
     'formatVersion': formatVersion,
+    'packageType': packageType.wireName,
     'id': id,
     'name': name,
     'version': version.toString(),
+    if (profiles.isNotEmpty) 'profiles': profiles,
     if (description != null) 'description': description,
     if (authors.isNotEmpty) 'authors': authors,
     if (homepage != null) 'homepage': homepage,
@@ -199,6 +242,12 @@ final class PluginManifest {
     if (dependencies.isNotEmpty)
       'dependencies': [for (final d in dependencies) d.toJson()],
     if (capabilities.isNotEmpty) 'capabilities': capabilities.toList()..sort(),
+    if (provides.isNotEmpty) 'provides': [for (final c in provides) c.toJson()],
+    if (events.isNotEmpty)
+      'events': {
+        if (requiredEvents.isNotEmpty) 'requires': [for (final e in requiredEvents) e.toJson()],
+        if (optionalEvents.isNotEmpty) 'optional': [for (final e in optionalEvents) e.toJson()],
+      },
     if (build != null) 'build': build!.toJson(),
   };
 
@@ -483,7 +532,18 @@ final class _Validator {
     return result;
   }
 
-  Set<String> capabilities(String field) {
+  PackageType packageType(String field) {
+    final value = json[field];
+    if (value == null) return PackageType.plugin;
+    final type = value is String ? PackageType.fromWire(value) : null;
+    if (type == null) {
+      problem(field, 'unknown value "$value"; expected ${PackageType.values.map((t) => '"${t.wireName}"').join(' or ')}');
+      return PackageType.plugin;
+    }
+    return type;
+  }
+
+  Set<String> capabilities(String field, PackageType type) {
     final value = json[field];
     if (value == null) return const {};
     if (value is! List || !value.every((e) => e is String)) {
@@ -497,8 +557,163 @@ final class _Validator {
             'unknown capability "$capability"; this host knows ${_knownCapabilities.join(', ')}');
         continue;
       }
+      if (type == PackageType.plugin && _eventPackOnlyCapabilities.contains(capability)) {
+        problem(field, 'capability "$capability" is reserved for event packs');
+        continue;
+      }
       result.add(capability);
     }
+    return result;
+  }
+
+  List<EventContractSpec> provides(String field, PackageType type) {
+    final value = json[field];
+    if (value == null) {
+      if (type == PackageType.eventPack) problem(field, 'an event pack must provide at least one contract');
+      return const [];
+    }
+    if (type == PackageType.plugin) {
+      problem(field, 'only event packs provide contracts; set packageType to "event-pack"');
+      return const [];
+    }
+    if (value is! List) {
+      problem(field, 'must be a list of contract objects');
+      return const [];
+    }
+    if (value.isEmpty) problem(field, 'an event pack must provide at least one contract');
+    final result = <EventContractSpec>[];
+    final seen = <String>{};
+    for (var i = 0; i < value.length; i++) {
+      final item = value[i];
+      final where = '$field[$i]';
+      if (item is! Map) {
+        problem(where, 'must be an object');
+        continue;
+      }
+      final map = item.cast<String, Object?>();
+      final id = map['id'];
+      if (id is! String || !ContractNaming.contractIdPattern.hasMatch(id) || ContractNaming.isPrimitive(id)) {
+        problem('$where.id', 'must be a namespaced lowercase identifier such as "player.joined" (the "core." namespace is reserved)');
+        continue;
+      }
+      if (!seen.add(id)) {
+        problem('$where.id', '"$id" is declared more than once');
+        continue;
+      }
+      final versionText = map['version'];
+      Version? version;
+      if (versionText is String) {
+        try {
+          version = Version.parse(versionText);
+        } on FormatException {
+          problem('$where.version', '"$versionText" is not a semantic version');
+        }
+      } else {
+        problem('$where.version', 'is required');
+      }
+      final delivery = DeliverySpec.fromJson(map['delivery'], (m) => problem('$where.delivery', m));
+      final sources = map['sources'];
+      final sourceList = <String>[];
+      if (sources != null) {
+        if (sources is! List || !sources.every((s) => s is String)) {
+          problem('$where.sources', 'must be a list of primitive ids');
+        } else {
+          for (final source in sources.cast<String>()) {
+            if (!ContractNaming.isPrimitive(source) || !ContractNaming.contractIdPattern.hasMatch(source)) {
+              problem('$where.sources', '"$source" is not an internal primitive id (expected "core.…")');
+              continue;
+            }
+            sourceList.add(source);
+          }
+        }
+      }
+      final schema = <String, String>{};
+      final rawSchema = map['schema'];
+      if (rawSchema != null) {
+        if (rawSchema is! Map) {
+          problem('$where.schema', 'must be an object of field -> type');
+        } else {
+          for (final entry in rawSchema.entries) {
+            if (entry.key is! String || !ContractNaming.schemaTypes.contains(entry.value)) {
+              problem('$where.schema', 'field "${entry.key}" has unknown type "${entry.value}"; known: ${ContractNaming.schemaTypes.join(', ')}');
+              continue;
+            }
+            schema[entry.key as String] = entry.value as String;
+          }
+        }
+      }
+      final description = map['description'];
+      if (description != null && description is! String) problem('$where.description', 'must be a string');
+      if (version == null || delivery == null) continue;
+      result.add(EventContractSpec(
+        id: id,
+        version: version,
+        delivery: delivery,
+        sources: sourceList,
+        schema: schema,
+        description: description as String?,
+      ));
+    }
+    return result;
+  }
+
+  List<ContractRequirement> events(String field, PackageType type) {
+    final value = json[field];
+    if (value == null) return const [];
+    if (type == PackageType.eventPack) {
+      problem(field, 'event packs provide contracts; they do not consume them');
+      return const [];
+    }
+    if (value is! Map) {
+      problem(field, 'must be an object with "requires" and/or "optional" lists');
+      return const [];
+    }
+    final map = value.cast<String, Object?>();
+    final result = <ContractRequirement>[];
+    final seen = <String>{};
+    for (final key in map.keys) {
+      if (key != 'requires' && key != 'optional') {
+        problem('$field.$key', 'unknown key; use "requires" or "optional"');
+      }
+    }
+    void parseList(String key, bool optional) {
+      final list = map[key];
+      if (list == null) return;
+      if (list is! List) {
+        problem('$field.$key', 'must be a list of {id, version} objects');
+        return;
+      }
+      for (var i = 0; i < list.length; i++) {
+        final item = list[i];
+        final where = '$field.$key[$i]';
+        if (item is! Map) {
+          problem(where, 'must be an object');
+          continue;
+        }
+        final id = item['id'];
+        final range = item['version'];
+        if (id is! String || !ContractNaming.contractIdPattern.hasMatch(id) || ContractNaming.isPrimitive(id)) {
+          problem('$where.id', 'must be a namespaced contract id such as "player.joined"');
+          continue;
+        }
+        if (!seen.add(id)) {
+          problem('$where.id', '"$id" is listed more than once');
+          continue;
+        }
+        if (range is! String) {
+          problem('$where.version', 'is required');
+          continue;
+        }
+        try {
+          result.add(ContractRequirement(id: id, version: VersionConstraint.parse(range), optional: optional));
+        } on FormatException {
+          problem('$where.version', '"$range" is not a version constraint');
+        }
+      }
+    }
+
+    parseList('requires', false);
+    parseList('optional', true);
     return result;
   }
 
@@ -529,5 +744,6 @@ final class _Validator {
   /// Mirrors `PluginCapability.all` in `ayu_ipc`. Kept here so the package
   /// layer stays free of the IPC dependency; the host verifies both sets
   /// agree at start-up.
-  static const _knownCapabilities = <String>{'commands', 'events', 'config'};
+  static const _knownCapabilities = <String>{'commands', 'events', 'config', 'observe', 'publish'};
+  static const _eventPackOnlyCapabilities = <String>{'observe', 'publish'};
 }

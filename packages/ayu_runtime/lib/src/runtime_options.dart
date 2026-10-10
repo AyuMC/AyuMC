@@ -19,7 +19,16 @@ final class PluginRuntimeOptions {
     this.maxRestarts = 3,
     this.restartWindow = const Duration(minutes: 1),
     this.packageLimits = const PackageLimits(),
+    this.maxBatchItems = 256,
+    this.primitiveQueueLimit = 8192,
   });
+
+  /// Largest number of events or primitives in one batched frame.
+  final int maxBatchItems;
+
+  /// Queued primitives per event pack before the oldest are dropped (and
+  /// counted); primitives are infrastructure, so overflow is a gap.
+  final int primitiveQueueLimit;
 
   /// Process start until the worker's `hello` request.
   final Duration helloTimeout;

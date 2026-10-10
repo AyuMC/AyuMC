@@ -93,6 +93,26 @@ Not verified: Linux x64. The implementation uses portable APIs only
 (`Process.start` with argument lists, `path`, no shell), but no Linux run
 has been performed from this environment (no WSL available).
 
+## 2026-10-10 — modular profile and event packs
+
+The worker runtime stayed. Added on top of it:
+
+- `packageType` `plugin` or `event-pack`, profile constraints, `provides` and
+  `events` in the manifest. Existing plugin manifests stay valid: the type
+  defaults to `plugin` and an empty profile list matches every profile.
+- `ContractRegistry`, a batching outbox and `PrimitiveBus`. The core emits
+  only `core.*` primitives. Public contracts come from event packs.
+- Profile `AyuMC-1.8.9-release` and `ayu_protocol_189`: handshake, status
+  ping and login start. Login does not enter play.
+- Console: `event`, `profile`, `contracts`. `plugin` lists only regular
+  plugins. Disabling a pack that active plugins require needs `--cascade`,
+  which suspends those plugins.
+
+A plugin whose required contract has no provider is installed in state
+`suspended` and resumed when a compatible pack becomes active. A failed
+`onEnable` still leaves the package installed in `failed`. A contract
+conflict during install deletes the staged copy and leaves no record.
+
 ## Open items
 
 1. Linux x64 run of the full suite and the AOT integration test.

@@ -6,8 +6,10 @@ import 'package:ayu_logging/ayu_logging.dart';
 import 'package:ayu_package/ayu_package.dart';
 import 'package:pub_semver/pub_semver.dart';
 
+import 'contract_registry.dart';
 import 'dart_runtime.dart';
 import 'errors.dart';
+import 'event_platform.dart';
 import 'host_events.dart';
 import 'host_registry.dart';
 import 'plugin_instance.dart';
@@ -15,18 +17,22 @@ import 'plugin_snapshot.dart';
 import 'plugin_state.dart';
 import 'plugin_store.dart';
 import 'runtime_options.dart';
+import 'server_layout.dart';
 import 'worker_controller.dart';
 import 'worker_launcher.dart';
 import 'worker_process.dart';
 
-/// Entry point of the plugin platform for the server.
+/// Entry point of the package platform for the server: regular plugins
+/// under `plugins/`, event packs under `events/`, one supervised worker per
+/// package, and the contract registry that connects them.
 ///
-/// Every operation on a plugin is serialised per plugin id, so a disable
-/// cannot interleave with a start. Nothing here blocks the event loop; all
-/// waits are bounded by [PluginRuntimeOptions].
+/// Every operation on a package id is serialised, so a disable cannot
+/// interleave with a start. Nothing here blocks the event loop; all waits
+/// are bounded by [PluginRuntimeOptions].
 final class PluginHost {
   PluginHost({
     required Directory rootDirectory,
+    required this.profileId,
     this.options = const PluginRuntimeOptions(),
     Logger? logger,
     DartAotRuntime? runtime,
@@ -36,10 +42,17 @@ final class PluginHost {
   })  : _log = logger ?? Logger('Plugins'),
         _runtime = runtime,
         _target = RuntimeTarget.current(),
-        apiVersion = Version.parse(IpcProtocol.apiVersion) {
-    _store = PluginStore(rootDirectory, log: _log);
+        apiVersion = Version.parse(IpcProtocol.apiVersion),
+        layout = ServerLayout(rootDirectory) {
+    _pluginStore = PluginStore(layout.plugins.root, log: _log);
+    _eventStore = PluginStore(layout.events.root, log: _log);
+    dispatcher = EventDispatcher(registry: contracts, options: options, log: _log, lookup: _lookup);
+    primitives = PrimitiveBus(registry: contracts, dispatcher: dispatcher, options: options, log: _log, lookup: _lookup);
     _controller = WorkerController(
       registry: registry,
+      contracts: contracts,
+      dispatcher: dispatcher,
+      primitives: primitives,
       options: options,
       launcher: launcher,
       log: _log,
@@ -50,15 +63,24 @@ final class PluginHost {
     );
   }
 
+  /// Active server profile; packages must support it.
+  final String profileId;
   final PluginRuntimeOptions options;
   final String? runtimeExecutable;
   final String hostVersion;
   final Version apiVersion;
+  final ServerLayout layout;
   final HostRegistry registry = HostRegistry();
+  final ContractRegistry contracts = ContractRegistry();
+  late final EventDispatcher dispatcher;
+
+  /// The core's entry point for internal primitives.
+  late final PrimitiveBus primitives;
 
   final Logger _log;
   final RuntimeTarget _target;
-  late final PluginStore _store;
+  late final PluginStore _pluginStore;
+  late final PluginStore _eventStore;
   late final WorkerController _controller;
   final Map<String, PluginInstance> _instances = {};
   final Map<String, Future<void>> _locks = {};
@@ -71,42 +93,51 @@ final class PluginHost {
   RuntimeTarget get target => _target;
   DartAotRuntime? get runtime => _runtime;
   Stream<PluginHostEvent> get events => _events.stream;
-  PluginStoreLayout get layout => _store.layout;
 
-  List<PluginSnapshot> get plugins =>
-      [for (final i in _instances.values) i.snapshot(enabled: _store.records[i.id]?.enabled ?? false)]
-        ..sort((a, b) => a.id.compareTo(b.id));
+  List<PluginSnapshot> get plugins => [for (final i in _instances.values) _snapshot(i)]..sort((a, b) => a.id.compareTo(b.id));
+
+  List<PluginSnapshot> get eventPacks => plugins.where((p) => p.isEventPack).toList();
+  List<PluginSnapshot> get regularPlugins => plugins.where((p) => !p.isEventPack).toList();
 
   PluginSnapshot? plugin(String id) {
     final instance = _instances[id];
-    return instance?.snapshot(enabled: _store.records[id]?.enabled ?? false);
+    return instance == null ? null : _snapshot(instance);
   }
 
-  /// Opens the store, locates the runtime and starts every enabled plugin
-  /// in dependency order. A missing runtime is not fatal here: it is
-  /// reported on each plugin and again on the next enable attempt.
+  /// Opens both stores, locates the runtime and starts every enabled
+  /// package: event packs first, then plugins, each in dependency order. A
+  /// missing runtime is not fatal here; it is reported per package and on
+  /// the next enable attempt.
   Future<void> start() async {
     if (_started) throw StateError('PluginHost already started');
     _started = true;
-    await _store.open();
+    await layout.create();
+    await _pluginStore.open();
+    await _eventStore.open();
     await _locateRuntime();
-    final stored = await _store.loadInstalled(limits: options.packageLimits);
-    for (final plugin in stored) {
-      _instances[plugin.record.id] = PluginInstance(
-        manifest: plugin.manifest,
-        installDirectory: plugin.installDirectory,
-        dataDirectory: _store.layout.dataDirectory(plugin.record.id),
+    final stored = [
+      ...await _eventStore.loadInstalled(limits: options.packageLimits),
+      ...await _pluginStore.loadInstalled(limits: options.packageLimits),
+    ];
+    for (final item in stored) {
+      _instances[item.record.id] = PluginInstance(
+        manifest: item.manifest,
+        installDirectory: item.installDirectory,
+        dataDirectory: _storeFor(item.manifest).layout.dataDirectory(item.record.id),
         initialState: PluginState.discovered,
       );
     }
     for (final instance in _instances.values) {
-      _controllerMove(instance, PluginState.disabled);
+      _move(instance, PluginState.disabled);
     }
-    for (final id in _bootOrder(stored.where((s) => s.record.enabled).map((s) => s.record.id).toSet())) {
+    final enabled = stored.where((s) => s.record.enabled).map((s) => s.record.id).toSet();
+    final packs = _bootOrder(enabled.where((id) => _instances[id]!.isEventPack).toSet());
+    final regular = _bootOrder(enabled.where((id) => !_instances[id]!.isEventPack).toSet());
+    for (final id in [...packs, ...regular]) {
       try {
         await _serialized(id, () => _startInstance(_instances[id]!));
       } on PluginHostException catch (e) {
-        _log.error('plugin "$id" was not started: ${e.message}');
+        _log.error('package "$id" was not started: ${e.message}');
       }
     }
   }
@@ -115,24 +146,32 @@ final class PluginHost {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    for (final instance in _instances.values) {
+    // Plugins first so no consumer sees its providers vanish mid-shutdown.
+    final order = [
+      ..._instances.values.where((i) => !i.isEventPack),
+      ..._instances.values.where((i) => i.isEventPack),
+    ];
+    for (final instance in order) {
       if (instance.state.hasWorker || instance.worker != null) {
         try {
-          await _serialized(instance.id, () => _controller.stop(instance, reason: 'host shutdown'));
+          await _serialized(instance.id, () => _stopInstance(instance, reason: 'host shutdown', notifyDependents: false));
         } catch (e) {
           _log.error('stopping "${instance.id}" failed: $e');
         }
       }
     }
+    dispatcher.dispose();
+    primitives.dispose();
     await registry.dispose();
     await _events.close();
   }
 
   // ------------------------------------------------------------- operations
 
-  /// Installs a package while the server runs. With [enable] the worker is
-  /// started and the plugin is active when this returns; a start failure
-  /// leaves the plugin installed in the failed state with diagnostics.
+  /// Installs a plugin or event pack while the server runs. With [enable]
+  /// the worker is started; a plugin whose required contracts have no
+  /// provider is left `suspended` with diagnostics, a start failure leaves
+  /// the package installed in the failed state.
   Future<PluginSnapshot> install(File package, {bool enable = true}) async {
     _checkUsable();
     final opened = await AyuPackage.open(package, limits: options.packageLimits);
@@ -142,23 +181,33 @@ final class PluginHost {
       return await _serialized(manifest.id, () async {
         if (_instances.containsKey(manifest.id)) {
           throw PluginHostException(PluginHostErrorCode.alreadyInstalled,
-              'plugin "${manifest.id}" ${_instances[manifest.id]!.version} is already installed; use update to replace it');
+              'package "${manifest.id}" ${_instances[manifest.id]!.version} is already installed; use update to replace it');
         }
         _checkDependencies(manifest, requireActive: enable);
-        final installDirectory = await _stage(opened);
+        final store = _storeFor(manifest);
+        final installDirectory = await _stage(store, opened);
         final instance = PluginInstance(
           manifest: manifest,
           installDirectory: installDirectory,
-          dataDirectory: _store.layout.dataDirectory(manifest.id),
+          dataDirectory: store.layout.dataDirectory(manifest.id),
           initialState: PluginState.staged,
         );
         _instances[manifest.id] = instance;
         _emit(PluginStateChanged(manifest.id, PluginState.validating, PluginState.staged));
-        await _store.put(InstalledPluginRecord(id: manifest.id, version: manifest.version, enabled: enable));
-        if (enable) {
-          await _startInstance(instance);
-        } else {
-          _controllerMove(instance, PluginState.disabled);
+        await store.put(InstalledPluginRecord(id: manifest.id, version: manifest.version, enabled: enable));
+        try {
+          if (enable) {
+            await _startInstance(instance);
+          } else {
+            _move(instance, PluginState.disabled);
+          }
+        } on PluginHostException {
+          if (instance.state == PluginState.staged) {
+            _instances.remove(manifest.id);
+            await store.remove(manifest.id);
+            await store.deleteInstalled(manifest.id, manifest.version);
+          }
+          rethrow;
         }
         return _snapshot(instance);
       });
@@ -173,35 +222,39 @@ final class PluginHost {
       final instance = _require(id);
       if (instance.state == PluginState.active) return _snapshot(instance);
       if (instance.state.hasWorker) {
-        throw PluginHostException(PluginHostErrorCode.invalidState, 'plugin "$id" is ${instance.state.name}');
+        throw PluginHostException(PluginHostErrorCode.invalidState, 'package "$id" is ${instance.state.name}');
       }
-      await _store.put(_store.records[id]!.copyWith(enabled: true));
+      final store = _storeFor(instance.manifest);
+      await store.put(store.records[id]!.copyWith(enabled: true));
       await _startInstance(instance);
       return _snapshot(instance);
     });
   }
 
   /// Stops routing immediately, then shuts the worker down (killing it if
-  /// it ignores the request). Refused while active plugins require [id].
-  Future<PluginSnapshot> disable(String id, {String reason = 'requested'}) {
+  /// it ignores the request). Disabling an event pack whose contracts are
+  /// required by active plugins is refused unless [cascade] suspends them.
+  Future<PluginSnapshot> disable(String id, {String reason = 'requested', bool cascade = false}) {
     _checkUsable();
     return _serialized(id, () async {
       final instance = _require(id);
       if (instance.state == PluginState.disabled) return _snapshot(instance);
       _checkNoActiveDependents(id);
-      await _store.put(_store.records[id]!.copyWith(enabled: false));
+      if (instance.isEventPack && !cascade) _checkNoActiveContractDependents(instance);
+      final store = _storeFor(instance.manifest);
+      await store.put(store.records[id]!.copyWith(enabled: false));
       if (instance.state.hasWorker || instance.worker != null) {
-        await _controller.stop(instance, reason: reason);
+        await _stopInstance(instance, reason: reason);
       } else {
-        _controllerMove(instance, PluginState.disabled);
+        _move(instance, PluginState.disabled);
       }
       return _snapshot(instance);
     });
   }
 
-  /// Replaces an installed plugin with a different version. The new version
-  /// is staged next to the old one; the old worker is stopped only after
-  /// staging succeeded, and restarted if the new version fails to start.
+  /// Replaces an installed package with a different version. The new
+  /// version is staged next to the old one; the old worker is stopped only
+  /// after staging succeeded, and restarted if the new version fails.
   Future<PluginSnapshot> update(File package) async {
     _checkUsable();
     final opened = await AyuPackage.open(package, limits: options.packageLimits);
@@ -212,13 +265,18 @@ final class PluginHost {
         final current = _require(manifest.id);
         if (current.version == manifest.version) {
           throw PluginHostException(PluginHostErrorCode.alreadyInstalled,
-              'plugin "${manifest.id}" ${manifest.version} is already the installed version');
+              'package "${manifest.id}" ${manifest.version} is already the installed version');
         }
-        final record = _store.records[manifest.id]!;
+        if (current.manifest.packageType != manifest.packageType) {
+          throw PluginHostException(PluginHostErrorCode.incompatible,
+              'package "${manifest.id}" is installed as a ${current.manifest.packageType.wireName}; the update is a ${manifest.packageType.wireName}');
+        }
+        final store = _storeFor(manifest);
+        final record = store.records[manifest.id]!;
         final wasActive = current.state == PluginState.active;
         _checkDependencies(manifest, requireActive: wasActive);
         _checkDependentsAccept(manifest.id, manifest.version);
-        final installDirectory = await _stage(opened);
+        final installDirectory = await _stage(store, opened);
         final next = PluginInstance(
           manifest: manifest,
           installDirectory: installDirectory,
@@ -226,14 +284,14 @@ final class PluginHost {
           initialState: PluginState.staged,
         );
         if (current.state.hasWorker || current.worker != null) {
-          await _controller.stop(current, reason: 'update to ${manifest.version}');
+          await _stopInstance(current, reason: 'update to ${manifest.version}');
         }
         _instances[manifest.id] = next;
         _emit(PluginStateChanged(manifest.id, PluginState.validating, PluginState.staged));
-        await _store.put(record.copyWith(version: manifest.version));
+        await store.put(record.copyWith(version: manifest.version));
         if (!wasActive) {
-          _controllerMove(next, PluginState.disabled);
-          await _store.deleteInstalled(manifest.id, current.version);
+          _move(next, PluginState.disabled);
+          await store.deleteInstalled(manifest.id, current.version);
           return _snapshot(next);
         }
         try {
@@ -241,8 +299,8 @@ final class PluginHost {
         } on PluginHostException catch (failure) {
           _log.error('update of "${manifest.id}" to ${manifest.version} failed; rolling back to ${current.version}');
           _instances[manifest.id] = current;
-          await _store.put(record);
-          await _store.deleteInstalled(manifest.id, manifest.version);
+          await store.put(record);
+          await store.deleteInstalled(manifest.id, manifest.version);
           final details = [failure.message, ...failure.details];
           try {
             await _startInstance(current);
@@ -253,7 +311,7 @@ final class PluginHost {
               'update of "${manifest.id}" to ${manifest.version} failed; ${current.version} restored',
               details: details);
         }
-        await _store.deleteInstalled(manifest.id, current.version);
+        await store.deleteInstalled(manifest.id, current.version);
         return _snapshot(next);
       });
     } finally {
@@ -261,9 +319,11 @@ final class PluginHost {
     }
   }
 
-  /// Stops the plugin if needed and removes its installed files. The data
-  /// directory is kept. Refused while other installed plugins require it.
-  Future<void> uninstall(String id) {
+  /// Stops the package if needed and removes its installed files. The data
+  /// directory is kept. Refused while other installed packages depend on
+  /// it, or (event packs) while active plugins require its contracts unless
+  /// [cascade] suspends them.
+  Future<void> uninstall(String id, {bool cascade = false}) {
     _checkUsable();
     return _serialized(id, () async {
       final instance = _require(id);
@@ -272,34 +332,16 @@ final class PluginHost {
         throw PluginHostException(PluginHostErrorCode.dependency,
             'cannot uninstall "$id": required by ${dependents.join(', ')}');
       }
+      if (instance.isEventPack && !cascade) _checkNoActiveContractDependents(instance);
       if (instance.state.hasWorker || instance.worker != null) {
-        await _controller.stop(instance, reason: 'uninstall');
+        await _stopInstance(instance, reason: 'uninstall');
       }
+      final store = _storeFor(instance.manifest);
       _instances.remove(id);
-      await _store.remove(id);
-      await _store.deleteInstalled(id, instance.version);
+      await store.remove(id);
+      await store.deleteInstalled(id, instance.version);
       _log.info('uninstalled "$id" ${instance.version}');
     });
-  }
-
-  /// Delivers an event to every active subscriber. Returns how many workers
-  /// accepted it; congested channels drop and count instead of blocking.
-  int emitEvent(String type, Map<String, Object?> data) {
-    final subscribers = registry.subscribers(type);
-    if (subscribers.isEmpty) return 0;
-    final payload = EventEnvelope(type: type, data: data, timestampMillis: DateTime.now().millisecondsSinceEpoch).toJson();
-    var delivered = 0;
-    for (final id in List.of(subscribers)) {
-      final instance = _instances[id];
-      final worker = instance?.worker;
-      if (instance == null || worker == null || instance.state != PluginState.active) continue;
-      if (worker.channel.notify(IpcMethod.event, payload)) {
-        delivered++;
-      } else {
-        instance.droppedEvents++;
-      }
-    }
-    return delivered;
   }
 
   /// Executes a plugin command. Throws [PluginHostException] when the
@@ -330,6 +372,10 @@ final class PluginHost {
 
   // --------------------------------------------------------------- internals
 
+  PluginInstance? _lookup(String id) => _instances[id];
+
+  PluginStore _storeFor(PluginManifest manifest) => manifest.isEventPack ? _eventStore : _pluginStore;
+
   Future<void> _locateRuntime() async {
     if (_runtime != null) return;
     try {
@@ -350,30 +396,133 @@ final class PluginHost {
     return runtime;
   }
 
+  /// Starts a worker. Plugins whose required contracts are unavailable are
+  /// parked in `suspended` instead; event packs whose contracts collide
+  /// with an active provider are refused.
   Future<void> _startInstance(PluginInstance instance) async {
     final runtime = _requireRuntime();
     _checkArtifactCompatibility(instance.manifest, runtime);
     _checkDependencies(instance.manifest, requireActive: true);
+    if (instance.isEventPack) {
+      final conflicts = contracts.conflictsFor(instance.id, instance.manifest.provides);
+      if (conflicts.isNotEmpty) {
+        throw PluginHostException(PluginHostErrorCode.conflict,
+            'event pack "${instance.id}" cannot start: contract(s) already provided', details: conflicts);
+      }
+    } else {
+      final unsatisfied = contracts.unsatisfiedRequirements(instance.manifest);
+      if (unsatisfied.isNotEmpty) {
+        instance.lastError = 'waiting for required contracts: ${unsatisfied.join('; ')}';
+        if (instance.state != PluginState.suspended) _move(instance, PluginState.suspended, error: instance.lastError);
+        _log.warn('[${instance.id}] ${instance.lastError}');
+        return;
+      }
+    }
     await _controller.start(instance, runtime);
+    if (instance.isEventPack) {
+      contracts.registerProvider(instance.id, instance.manifest.provides);
+      instance.providerRegistered = true;
+      await _onContractsAvailable(instance.manifest.provides.map((c) => c.id).toList(), instance.id);
+    }
+  }
+
+  /// Stops a worker; for event packs the contracts are withdrawn first so
+  /// nothing is published mid-shutdown, then dependents are handled.
+  Future<TerminationOutcome> _stopInstance(PluginInstance instance,
+      {required String reason, PluginState endState = PluginState.disabled, bool notifyDependents = true}) async {
+    var lost = const <String>[];
+    if (instance.isEventPack && instance.providerRegistered) {
+      lost = contracts.unregisterProvider(instance.id);
+      instance.providerRegistered = false;
+    }
+    final outcome = await _controller.stop(instance, reason: reason, endState: endState);
+    if (lost.isNotEmpty && notifyDependents) {
+      await _onContractsLost(lost, '"${instance.id}" ${reason == 'requested' ? 'was disabled' : reason}');
+    }
+    return outcome;
+  }
+
+  /// Required dependents are suspended; optional consumers are told.
+  Future<void> _onContractsLost(List<String> lost, String cause) async {
+    final suspensions = <Future<void>>[];
+    for (final id in contracts.consumersRequiring(lost)) {
+      final dependent = _instances[id];
+      if (dependent == null || dependent.state != PluginState.active) continue;
+      final missing = lost.where((c) => dependent.manifest.requiredEvents.any((r) => r.id == c)).join(', ');
+      dependent.lastError = 'required contract(s) $missing unavailable: $cause';
+      _log.warn('[${dependent.id}] suspending: ${dependent.lastError}');
+      suspensions.add(_serialized(id, () async {
+        if (dependent.state != PluginState.active) return;
+        await _controller.stop(dependent, reason: 'required contract unavailable', endState: PluginState.suspended);
+      }));
+    }
+    await Future.wait(suspensions);
+    for (final id in contracts.consumersOptionallyUsing(lost)) {
+      final consumer = _instances[id];
+      final worker = consumer?.worker;
+      if (consumer == null || worker == null || consumer.state != PluginState.active) continue;
+      for (final contract in lost) {
+        if (consumer.manifest.optionalEvents.any((o) => o.id == contract)) {
+          worker.channel.notify(IpcMethod.contractChanged, ContractAvailability(id: contract, available: false).toJson());
+        }
+      }
+    }
+  }
+
+  /// Optional consumers are told; suspended plugins whose requirements are
+  /// now met are started again.
+  Future<void> _onContractsAvailable(List<String> available, String providerId) async {
+    for (final id in contracts.consumersOptionallyUsing(available)) {
+      final consumer = _instances[id];
+      final worker = consumer?.worker;
+      if (consumer == null || worker == null || consumer.state != PluginState.active) continue;
+      for (final contract in available) {
+        final provided = contracts.provider(contract);
+        if (provided != null && consumer.manifest.optionalEvents.any((o) => o.id == contract)) {
+          worker.channel.notify(IpcMethod.contractChanged,
+              ContractAvailability(id: contract, available: true, version: provided.spec.version.toString()).toJson());
+        }
+      }
+    }
+    final resumes = <Future<void>>[];
+    for (final candidate in _instances.values.where((i) => i.state == PluginState.suspended).toList()) {
+      final store = _storeFor(candidate.manifest);
+      if (store.records[candidate.id]?.enabled != true) continue;
+      if (contracts.unsatisfiedRequirements(candidate.manifest).isNotEmpty) continue;
+      _log.info('[${candidate.id}] required contracts available again (from "$providerId"); resuming');
+      resumes.add(_serialized(candidate.id, () async {
+        if (candidate.state != PluginState.suspended) return;
+        try {
+          await _startInstance(candidate);
+        } on PluginHostException catch (e) {
+          _log.error('resume of "${candidate.id}" failed: ${e.message}');
+        }
+      }));
+    }
+    await Future.wait(resumes);
   }
 
   /// Extracts the opened package into staging, then commits it atomically.
-  Future<Directory> _stage(AyuPackage package) async {
-    final staging = await _store.createStagingDirectory();
+  Future<Directory> _stage(PluginStore store, AyuPackage package) async {
+    final staging = await store.createStagingDirectory();
     try {
       await package.extractTo(staging);
     } catch (_) {
-      await _store.discard(staging);
+      await store.discard(staging);
       rethrow;
     }
-    return _store.commit(staged: staging, id: package.manifest.id, version: package.manifest.version);
+    return store.commit(staged: staging, id: package.manifest.id, version: package.manifest.version);
   }
 
   /// Rejects packages this host cannot run, with the reason spelled out.
   void _checkCompatibility(PluginManifest manifest) {
     if (!manifest.api.allows(apiVersion)) {
       throw PluginHostException(PluginHostErrorCode.incompatible,
-          'plugin "${manifest.id}" requires plugin API ${manifest.api}; this host provides $apiVersion');
+          'package "${manifest.id}" requires plugin API ${manifest.api}; this host provides $apiVersion');
+    }
+    if (!manifest.supportsProfile(profileId)) {
+      throw PluginHostException(PluginHostErrorCode.incompatible,
+          'package "${manifest.id}" supports profile(s) ${manifest.profiles.join(', ')}; this server runs $profileId');
     }
     final runtime = _runtime;
     if (runtime != null) {
@@ -388,15 +537,15 @@ final class PluginHost {
     if (artifact == null) throw _noArtifact(manifest);
     if (artifact.dartSdk != runtime.version) {
       throw PluginHostException(PluginHostErrorCode.incompatible,
-          'plugin "${manifest.id}" artifact for ${runtime.target} was built with Dart ${artifact.dartSdk}; '
+          'package "${manifest.id}" artifact for ${runtime.target} was built with Dart ${artifact.dartSdk}; '
           'this server runs dartaotruntime ${runtime.version}. AOT snapshots only run on the exact SDK version '
-          'that produced them: rebuild the plugin with Dart ${runtime.version}.');
+          'that produced them: rebuild the package with Dart ${runtime.version}.');
     }
   }
 
   PluginHostException _noArtifact(PluginManifest manifest) => PluginHostException(
         PluginHostErrorCode.incompatible,
-        'plugin "${manifest.id}" has no runtime artifact for ${_target.id}'
+        'package "${manifest.id}" has no runtime artifact for ${_target.id}'
         '${manifest.artifacts.isEmpty ? ' (source-only package)' : '; it ships ${manifest.artifacts.keys.join(', ')}'}. '
         'Build it with `ayu plugin build --target ${_target.id}` and repackage.',
       );
@@ -421,7 +570,7 @@ final class PluginHost {
     }
     if (problems.isNotEmpty) {
       throw PluginHostException(PluginHostErrorCode.dependency,
-          'plugin "${manifest.id}" has unsatisfied dependencies', details: problems);
+          'package "${manifest.id}" has unsatisfied dependencies', details: problems);
     }
   }
 
@@ -429,7 +578,20 @@ final class PluginHost {
     final dependents = _dependentsOf(id, onlyActive: true);
     if (dependents.isNotEmpty) {
       throw PluginHostException(PluginHostErrorCode.dependency,
-          'cannot disable "$id": required by active plugin(s) ${dependents.join(', ')}; disable them first');
+          'cannot disable "$id": required by active package(s) ${dependents.join(', ')}; disable them first');
+    }
+  }
+
+  void _checkNoActiveContractDependents(PluginInstance pack) {
+    final provided = pack.manifest.provides.map((c) => c.id).toList();
+    final dependents = [
+      for (final id in contracts.consumersRequiring(provided))
+        if (_instances[id]?.state == PluginState.active) id,
+    ];
+    if (dependents.isNotEmpty) {
+      throw PluginHostException(PluginHostErrorCode.dependency,
+          'event pack "${pack.id}" provides contracts required by active plugin(s) ${dependents.join(', ')}; '
+          'disable them first or pass --cascade to suspend them');
     }
   }
 
@@ -442,8 +604,7 @@ final class PluginHost {
           if (dependency.id == id && !dependency.version.allows(next)) '"${other.id}" requires $id ${dependency.version}',
     ];
     if (rejecting.isNotEmpty) {
-      throw PluginHostException(PluginHostErrorCode.dependency,
-          'cannot update "$id" to $next', details: rejecting);
+      throw PluginHostException(PluginHostErrorCode.dependency, 'cannot update "$id" to $next', details: rejecting);
     }
   }
 
@@ -455,8 +616,8 @@ final class PluginHost {
             other.id,
       ];
 
-  /// Topological order over required dependencies; members of a cycle are
-  /// reported and skipped.
+  /// Topological order over required package dependencies; members of a
+  /// cycle are reported and skipped.
   List<String> _bootOrder(Set<String> ids) {
     final remaining = Set.of(ids);
     final order = <String>[];
@@ -470,7 +631,7 @@ final class PluginHost {
         for (final id in remaining) {
           final instance = _instances[id]!;
           instance.lastError = 'dependency cycle involving ${remaining.join(', ')}';
-          _log.error('plugin "$id" not started: ${instance.lastError}');
+          _log.error('package "$id" not started: ${instance.lastError}');
         }
         break;
       }
@@ -484,16 +645,22 @@ final class PluginHost {
     unawaited(_serialized(instance.id, () async {
       final worker = instance.worker;
       if (worker == null || instance.state != PluginState.active) return;
-      registry.removeAll(instance.id);
+      var lost = const <String>[];
+      if (instance.isEventPack && instance.providerRegistered) {
+        lost = contracts.unregisterProvider(instance.id);
+        instance.providerRegistered = false;
+      }
+      _controller.releaseRegistrations(instance);
       instance.recordWorkerFailure(worker, 'worker exited unexpectedly with code $exitCode');
       await worker.dispose();
       instance.worker = null;
-      _controllerMove(instance, PluginState.crashed, error: instance.lastError);
+      _move(instance, PluginState.crashed, error: instance.lastError);
+      if (lost.isNotEmpty) _onContractsLost(lost, '"${instance.id}" crashed');
       if (!options.restartOnCrash) return;
       final allowed = instance.consumeRestartBudget(
           maxRestarts: options.maxRestarts, window: options.restartWindow, now: DateTime.now());
       if (!allowed) {
-        _log.error('plugin "${instance.id}" crashed ${options.maxRestarts} times within '
+        _log.error('package "${instance.id}" crashed ${options.maxRestarts} times within '
             '${options.restartWindow.inSeconds}s; leaving it crashed');
         return;
       }
@@ -511,7 +678,7 @@ final class PluginHost {
     _emit(PluginStateChanged(instance.id, from, to, error: error));
   }
 
-  void _controllerMove(PluginInstance instance, PluginState to, {String? error}) {
+  void _move(PluginInstance instance, PluginState to, {String? error}) {
     final from = instance.transition(to);
     _onStateChanged(instance, from, to, error: error);
   }
@@ -523,13 +690,13 @@ final class PluginHost {
   PluginInstance _require(String id) {
     final instance = _instances[id];
     if (instance == null) {
-      throw PluginHostException(PluginHostErrorCode.notInstalled, 'plugin "$id" is not installed');
+      throw PluginHostException(PluginHostErrorCode.notInstalled, 'package "$id" is not installed');
     }
     return instance;
   }
 
   PluginSnapshot _snapshot(PluginInstance instance) =>
-      instance.snapshot(enabled: _store.records[instance.id]?.enabled ?? false);
+      instance.snapshot(enabled: _storeFor(instance.manifest).records[instance.id]?.enabled ?? false);
 
   void _checkUsable() {
     if (!_started) throw StateError('PluginHost.start() has not been called');

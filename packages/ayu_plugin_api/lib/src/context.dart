@@ -4,6 +4,45 @@ import 'package:ayu_ipc/ayu_ipc.dart';
 
 typedef CommandHandler = FutureOr<CommandResult> Function(CommandInvocation call);
 typedef EventHandler = FutureOr<void> Function(EventEnvelope event);
+typedef DecisionHandler = FutureOr<Decision> Function(DecisionRequest request);
+typedef AvailabilityHandler = void Function(ContractAvailability change);
+typedef GapHandler = void Function(DeliveryGap gap);
+typedef PrimitiveHandler = FutureOr<void> Function(PrimitiveEnvelope primitive);
+typedef PrimitiveDecisionHandler = FutureOr<PrimitiveDecision> Function(DecisionRequest request);
+
+/// Verdict of a plugin on a decision contract.
+final class Decision {
+  const Decision._(this.verdict, this.reason);
+
+  const Decision.allow() : this._(Verdict.allow, null);
+
+  const Decision.deny([String? reason]) : this._(Verdict.deny, reason);
+
+  final String verdict;
+  final String? reason;
+
+  DecisionResponse toResponse() => DecisionResponse.verdict(verdict, reason: reason);
+}
+
+/// Answer of an event pack to a decision primitive: translate it into a
+/// contract event for the consumers to judge, or settle it directly.
+final class PrimitiveDecision {
+  const PrimitiveDecision._(this._response);
+
+  /// Put [data] to the consumers of [contract]; their verdicts decide.
+  PrimitiveDecision.translate(String contract, Map<String, Object?> data)
+      : this._(DecisionResponse.translate(contract, data));
+
+  /// Let the operation proceed without consulting consumers.
+  const PrimitiveDecision.allow() : this._(const DecisionResponse.verdict(Verdict.allow));
+
+  /// Veto the operation without consulting consumers.
+  PrimitiveDecision.deny([String? reason]) : this._(DecisionResponse.verdict(Verdict.deny, reason: reason));
+
+  final DecisionResponse _response;
+
+  DecisionResponse toResponse() => _response;
+}
 
 /// Operations the context needs from the runner. Kept abstract so the SDK
 /// can be exercised in-process by tests.
@@ -13,7 +52,7 @@ abstract interface class HostLink {
   bool get isConnected;
 }
 
-/// Everything a plugin may use to talk to the server.
+/// Everything a package may use to talk to the server.
 final class PluginContext {
   PluginContext({
     required this.plugin,
@@ -28,6 +67,7 @@ final class PluginContext {
     log = PluginLogger._(this);
     commands = PluginCommands._(this);
     events = PluginEvents._(this);
+    primitives = PrimitiveObservations._(this);
     timers = PluginTimers._();
     host = HostClient._(this);
   }
@@ -37,7 +77,7 @@ final class PluginContext {
   /// Directory the package was extracted to. Read-only by convention.
   final String installDirectory;
 
-  /// Directory for the plugin's own persistent files. Survives updates.
+  /// Directory for the package's own persistent files. Survives updates.
   final String dataDirectory;
 
   /// Capabilities declared in the manifest and granted by the host.
@@ -48,7 +88,12 @@ final class PluginContext {
 
   late final PluginLogger log;
   late final PluginCommands commands;
+
+  /// Contract events: subscribe (plugins), publish (event packs).
   late final PluginEvents events;
+
+  /// Internal primitives: event packs only.
+  late final PrimitiveObservations primitives;
   late final PluginTimers timers;
   late final HostClient host;
 
@@ -93,11 +138,7 @@ final class PluginLogger {
   void _log(String level, String message) {
     _context._link.notify(
       IpcMethod.log,
-      LogNotification(
-        level: level,
-        message: message,
-        timestampMillis: DateTime.now().millisecondsSinceEpoch,
-      ).toJson(),
+      LogNotification(level: level, message: message, timestampMillis: DateTime.now().millisecondsSinceEpoch).toJson(),
     );
   }
 }
@@ -160,27 +201,72 @@ final class PluginCommands {
 }
 
 final class EventSubscription {
-  EventSubscription._(this._owner, this.type, this._handler);
+  EventSubscription._(this._owner, this.type, this._handler, this._decider);
 
   final PluginEvents _owner;
   final String type;
-  final EventHandler _handler;
+  final EventHandler? _handler;
+  final DecisionHandler? _decider;
 
   Future<void> cancel() => _owner._cancel(this);
 }
 
-/// Event subscriptions. The host delivers only subscribed types; delivery is
-/// one-way and may be dropped under backpressure, never blocked.
+/// Contract events.
+///
+/// Plugins subscribe to contracts declared in their manifest; delivery is
+/// one-way for observational contracts and request/response for decision
+/// contracts. Event packs publish contract events they declared.
 final class PluginEvents {
   PluginEvents._(this._context);
 
   final PluginContext _context;
   final Map<String, List<EventSubscription>> _subscriptions = {};
+  final List<AvailabilityHandler> _availabilityHandlers = [];
+  final List<GapHandler> _gapHandlers = [];
+  final List<PublishedEvent> _publishQueue = [];
+  bool _flushScheduled = false;
 
-  Future<EventSubscription> subscribe(String type, EventHandler handler) async {
+  /// Receives events of an observational contract.
+  Future<EventSubscription> subscribe(String type, EventHandler handler) =>
+      _subscribe(type, handler: handler);
+
+  /// Judges events of a decision contract. The host waits for the verdict
+  /// within the contract's budget; a late verdict is ignored and the
+  /// contract's timeout policy applies.
+  Future<EventSubscription> decide(String type, DecisionHandler handler) =>
+      _subscribe(type, decider: handler);
+
+  /// Notified when an optional contract becomes available or disappears.
+  void onAvailabilityChanged(AvailabilityHandler handler) => _availabilityHandlers.add(handler);
+
+  /// Notified when the host had to drop events for this consumer.
+  void onDeliveryGap(GapHandler handler) => _gapHandlers.add(handler);
+
+  /// Event packs: publish a contract event. Several publishes within one
+  /// event-loop turn travel in a single frame.
+  void publish(String contract, Map<String, Object?> data) {
+    _context._requireCapability(PluginCapability.publish);
+    _publishQueue.add(PublishedEvent(contract: contract, data: data, timestampMillis: DateTime.now().millisecondsSinceEpoch));
+    if (_flushScheduled) return;
+    _flushScheduled = true;
+    scheduleMicrotask(_flushPublishQueue);
+  }
+
+  void _flushPublishQueue() {
+    _flushScheduled = false;
+    if (_publishQueue.isEmpty) return;
+    final items = List.of(_publishQueue);
+    _publishQueue.clear();
+    final sent = items.length == 1
+        ? _context._link.notify(IpcMethod.eventPublish, items.single.toJson())
+        : _context._link.notify(IpcMethod.eventPublishBatch, PublishedEventBatch(items).toJson());
+    if (!sent) _context.log.warn('${items.length} published event(s) dropped: channel congested or closed');
+  }
+
+  Future<EventSubscription> _subscribe(String type, {EventHandler? handler, DecisionHandler? decider}) async {
     _context._requireCapability(PluginCapability.events);
     final list = _subscriptions.putIfAbsent(type, () => []);
-    final subscription = EventSubscription._(this, type, handler);
+    final subscription = EventSubscription._(this, type, handler, decider);
     final first = list.isEmpty;
     list.add(subscription);
     if (first) {
@@ -201,8 +287,7 @@ final class PluginEvents {
     if (list.isNotEmpty) return;
     _subscriptions.remove(subscription.type);
     if (!_context._link.isConnected) return;
-    await _context._link.request(
-        IpcMethod.eventUnsubscribe, EventSubscriptionSpec(subscription.type).toJson());
+    await _context._link.request(IpcMethod.eventUnsubscribe, EventSubscriptionSpec(subscription.type).toJson());
   }
 
   /// Runtime-internal delivery. Handler failures are logged, never fatal.
@@ -210,16 +295,145 @@ final class PluginEvents {
     final handlers = _subscriptions[event.type];
     if (handlers == null) return;
     for (final subscription in List.of(handlers)) {
+      final handler = subscription._handler;
+      if (handler == null) continue;
       try {
-        await subscription._handler(event);
+        await handler(event);
       } catch (error, stackTrace) {
         _context.log.error('event handler for "${event.type}" failed', error, stackTrace);
       }
     }
   }
+
+  /// Runtime-internal: collects verdicts; any deny wins. A handler error
+  /// counts as deny so a broken plugin fails closed on its own share.
+  Future<Decision> judge(DecisionRequest request) async {
+    final handlers = _subscriptions[request.id];
+    if (handlers == null) return const Decision.allow();
+    for (final subscription in List.of(handlers)) {
+      final decider = subscription._decider;
+      if (decider == null) continue;
+      try {
+        final decision = await decider(request);
+        if (decision.verdict == Verdict.deny) return decision;
+      } catch (error, stackTrace) {
+        _context.log.error('decision handler for "${request.id}" failed', error, stackTrace);
+        return Decision.deny('handler failed: $error');
+      }
+    }
+    return const Decision.allow();
+  }
+
+  void notifyAvailability(ContractAvailability change) {
+    for (final handler in List.of(_availabilityHandlers)) {
+      try {
+        handler(change);
+      } catch (error, stackTrace) {
+        _context.log.error('availability handler failed', error, stackTrace);
+      }
+    }
+  }
+
+  void notifyGap(DeliveryGap gap) {
+    for (final handler in List.of(_gapHandlers)) {
+      try {
+        handler(gap);
+      } catch (error, stackTrace) {
+        _context.log.error('gap handler failed', error, stackTrace);
+      }
+    }
+  }
 }
 
-/// Timers that are cancelled automatically when the plugin is disabled.
+final class PrimitiveSubscription {
+  PrimitiveSubscription._(this._owner, this.id);
+
+  final PrimitiveObservations _owner;
+  final String id;
+
+  Future<void> cancel() => _owner._cancel(this);
+}
+
+/// Internal primitives (event packs only). The host forwards a primitive
+/// only while a contract fed by it has consumers.
+final class PrimitiveObservations {
+  PrimitiveObservations._(this._context);
+
+  final PluginContext _context;
+  final Map<String, List<(PrimitiveSubscription, PrimitiveHandler)>> _observers = {};
+  final Map<String, PrimitiveDecisionHandler> _deciders = {};
+
+  /// Observes an observational primitive.
+  Future<PrimitiveSubscription> observe(String id, PrimitiveHandler handler) async {
+    _context._requireCapability(PluginCapability.observe);
+    final list = _observers.putIfAbsent(id, () => []);
+    final subscription = PrimitiveSubscription._(this, id);
+    final first = list.isEmpty && !_deciders.containsKey(id);
+    list.add((subscription, handler));
+    if (first) {
+      try {
+        await _context._link.request(IpcMethod.observeSubscribe, PrimitiveSubscriptionSpec(id).toJson());
+      } catch (_) {
+        list.removeWhere((e) => identical(e.$1, subscription));
+        if (list.isEmpty) _observers.remove(id);
+        rethrow;
+      }
+    }
+    return subscription;
+  }
+
+  /// Translates (or settles) a decision primitive. One handler per
+  /// primitive.
+  Future<void> decide(String id, PrimitiveDecisionHandler handler) async {
+    _context._requireCapability(PluginCapability.observe);
+    if (_deciders.containsKey(id)) {
+      throw IpcException.code(IpcErrorCode.conflict, 'a decision handler for "$id" is already registered');
+    }
+    final first = !_observers.containsKey(id);
+    _deciders[id] = handler;
+    if (first) {
+      try {
+        await _context._link.request(IpcMethod.observeSubscribe, PrimitiveSubscriptionSpec(id).toJson());
+      } catch (_) {
+        _deciders.remove(id);
+        rethrow;
+      }
+    }
+  }
+
+  Future<void> _cancel(PrimitiveSubscription subscription) async {
+    final list = _observers[subscription.id];
+    if (list == null) return;
+    list.removeWhere((e) => identical(e.$1, subscription));
+    if (list.isNotEmpty) return;
+    _observers.remove(subscription.id);
+    if (_deciders.containsKey(subscription.id) || !_context._link.isConnected) return;
+    await _context._link.request(IpcMethod.observeUnsubscribe, PrimitiveSubscriptionSpec(subscription.id).toJson());
+  }
+
+  /// Runtime-internal delivery.
+  Future<void> dispatch(PrimitiveEnvelope primitive) async {
+    final observers = _observers[primitive.id];
+    if (observers == null) return;
+    for (final (_, handler) in List.of(observers)) {
+      try {
+        await handler(primitive);
+      } catch (error, stackTrace) {
+        _context.log.error('primitive handler for "${primitive.id}" failed', error, stackTrace);
+      }
+    }
+  }
+
+  /// Runtime-internal: a failing or missing handler lets the host apply the
+  /// contract's timeout policy by returning no translation.
+  Future<PrimitiveDecision> judge(DecisionRequest request) async {
+    final handler = _deciders[request.id];
+    if (handler == null) return const PrimitiveDecision.allow();
+    return handler(request);
+  }
+}
+
+/// Timers that are cancelled automatically when the package is disabled.
 final class PluginTimers {
   PluginTimers._();
 

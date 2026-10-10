@@ -2,6 +2,7 @@
 /// archive inspection and extraction, and package authoring.
 library;
 
+export 'src/contracts.dart';
 export 'src/errors.dart';
 export 'src/integrity.dart';
 export 'src/manifest.dart';

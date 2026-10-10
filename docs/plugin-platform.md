@@ -1,5 +1,10 @@
 # AyuMC Plugin Platform
 
+Gameplay events are no longer a core catalog. Event packs, the 1.8.9 profile
+and the contract registry are described in `docs/modular-platform.md`. This
+document remains the reference for the `.ayu` archive, the worker supervisor
+and the IPC frame format.
+
 Plugins are Dart programs compiled ahead of time, shipped as `.ayu` archives
 and executed by the server in **separate `dartaotruntime` processes**. The
 server never loads plugin code into its own process; everything crosses a

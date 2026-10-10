@@ -33,29 +33,16 @@ void main() {
     expect(registry.resolveCommand('h'), isNull);
   });
 
-  test('removeAll drops commands and subscriptions of one plugin only', () async {
+  test('removeAll drops only the commands of one plugin', () async {
     final changes = <RegistryChange>[];
     registry.changes.listen(changes.add);
     registry.registerCommand('a', CommandSpec(name: 'one'));
     registry.registerCommand('b', CommandSpec(name: 'two'));
-    registry.subscribe('a', 'player.join');
-    registry.subscribe('b', 'player.join');
-    registry.subscribe('a', 'server.started');
 
     registry.removeAll('a');
     expect(registry.resolveCommand('one'), isNull);
     expect(registry.resolveCommand('two')?.pluginId, 'b');
-    expect(registry.subscribers('player.join'), ['b']);
-    expect(registry.subscribers('server.started'), isEmpty);
-    expect(registry.subscriptionsOf('a'), isEmpty);
     await Future<void>.delayed(Duration.zero);
     expect(changes.whereType<CommandUnregistered>().map((c) => c.name), ['one']);
-  });
-
-  test('validates event type names', () {
-    expect(() => registry.subscribe('a', 'Player.Join'), throwsA(isA<IpcException>()));
-    registry.subscribe('a', 'player.join');
-    expect(registry.unsubscribe('a', 'player.join'), isTrue);
-    expect(registry.unsubscribe('a', 'player.join'), isFalse);
   });
 }

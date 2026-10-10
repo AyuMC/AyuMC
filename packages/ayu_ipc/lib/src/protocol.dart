@@ -30,22 +30,64 @@ abstract final class IpcMethod {
   static const eventUnsubscribe = 'event.unsubscribe';
   static const configGet = 'config.get';
 
+  /// Event packs: observe internal primitives (capability `observe`).
+  static const observeSubscribe = 'observe.subscribe';
+  static const observeUnsubscribe = 'observe.unsubscribe';
+
+  /// Event packs: publish contract events, single or batched (capability
+  /// `publish`). Notifications.
+  static const eventPublish = 'event.publish';
+  static const eventPublishBatch = 'event.publish.batch';
+
   // host -> worker
   static const init = 'init';
   static const shutdown = 'shutdown';
   static const ping = 'ping';
   static const event = 'event';
+  static const eventBatch = 'event.batch';
   static const commandExecute = 'command.execute';
+
+  /// Host -> plugin: a decision contract awaits this consumer's verdict.
+  static const eventDecide = 'event.decide';
+
+  /// Host -> event pack: internal primitives, single or batched.
+  static const primitive = 'primitive';
+  static const primitiveBatch = 'primitive.batch';
+
+  /// Host -> event pack: translate a decision primitive into a contract
+  /// event (or veto it) within a budget.
+  static const primitiveDecide = 'primitive.decide';
+
+  /// Host -> plugin: an optional contract appeared or disappeared.
+  static const contractChanged = 'contract.changed';
+
+  /// Host -> plugin: events were dropped for a contract; nothing is ever
+  /// dropped silently.
+  static const deliveryGap = 'delivery.gap';
 }
 
-/// Capability identifiers a plugin may declare in its manifest. The host
+/// Capability identifiers a package may declare in its manifest. The host
 /// refuses requests whose capability was not declared.
 abstract final class PluginCapability {
   static const commands = 'commands';
   static const events = 'events';
   static const config = 'config';
 
-  static const all = <String>{commands, events, config};
+  /// Event packs only: observe internal primitives.
+  static const observe = 'observe';
+
+  /// Event packs only: publish contract events.
+  static const publish = 'publish';
+
+  static const all = <String>{commands, events, config, observe, publish};
+}
+
+/// Verdicts of decision contracts.
+abstract final class Verdict {
+  static const allow = 'allow';
+  static const deny = 'deny';
+
+  static const all = <String>{allow, deny};
 }
 
 /// Log levels accepted on the wire.

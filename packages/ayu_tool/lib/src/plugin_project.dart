@@ -24,6 +24,10 @@ final class PluginProject {
     required this.dependencies,
     required this.assetDirectories,
     required this.configDirectory,
+    this.packageType = PackageType.plugin,
+    this.profiles = const [],
+    this.provides = const [],
+    this.events = const [],
   });
 
   static const descriptorFileName = 'ayu_plugin.yaml';
@@ -44,6 +48,10 @@ final class PluginProject {
   final List<DependencySpec> dependencies;
   final List<String> assetDirectories;
   final String? configDirectory;
+  final PackageType packageType;
+  final List<String> profiles;
+  final List<EventContractSpec> provides;
+  final List<ContractRequirement> events;
 
   File get entryFile => File(p.join(root.path, entry));
   Directory get buildDirectory => Directory(p.join(root.path, 'build', 'ayu'));
@@ -149,6 +157,10 @@ final class PluginProject {
     if (config != null && !Directory(p.join(root.path, config)).existsSync()) {
       problems.add('config: directory "$config" does not exist');
     }
+    final packageType = _packageType(descriptor['packageType'], problems);
+    final profiles = _stringList(descriptor['profiles'], 'profiles', problems);
+    final provides = _provides(descriptor['provides'], packageType, problems);
+    final events = _events(descriptor['events'], packageType, problems);
     if (problems.isNotEmpty) {
       throw ToolException('invalid $descriptorFileName in ${root.path}', details: problems);
     }
@@ -167,7 +179,96 @@ final class PluginProject {
       dependencies: dependencies,
       assetDirectories: assets,
       configDirectory: config,
+      packageType: packageType,
+      profiles: profiles,
+      provides: provides,
+      events: events,
     );
+  }
+
+  static PackageType _packageType(Object? value, List<String> problems) {
+    if (value == null) return PackageType.plugin;
+    final parsed = value is String ? PackageType.fromWire(value) : null;
+    if (parsed == null) {
+      problems.add('packageType: unknown "$value"');
+      return PackageType.plugin;
+    }
+    return parsed;
+  }
+
+  static List<EventContractSpec> _provides(Object? value, PackageType type, List<String> problems) {
+    if (value == null) return const [];
+    if (type != PackageType.eventPack) {
+      problems.add('provides: only an event pack may declare contracts');
+      return const [];
+    }
+    if (value is! YamlList) {
+      problems.add('provides: must be a list');
+      return const [];
+    }
+    final result = <EventContractSpec>[];
+    for (final item in value) {
+      if (item is! YamlMap || item['id'] is! String || item['version'] is! String) {
+        problems.add('provides: each contract needs string fields id and version');
+        continue;
+      }
+      final sources = item['sources'];
+      final schema = item['schema'];
+      Version? version;
+      try {
+        version = Version.parse(item['version'] as String);
+      } on FormatException {
+        problems.add('provides.${item['id']}: version is not semantic');
+      }
+      final delivery = DeliverySpec.fromJson(item['delivery'], (message) => problems.add('provides.${item['id']}.delivery: $message'));
+      if (version == null || delivery == null) continue;
+      result.add(EventContractSpec(
+        id: item['id'] as String,
+        version: version,
+        delivery: delivery,
+        sources: sources is YamlList ? sources.whereType<String>().toList() : const [],
+        schema: schema is YamlMap ? schema.cast<String, String>() : const {},
+        description: item['description'] is String ? item['description'] as String : null,
+      ));
+    }
+    return result;
+  }
+
+  static List<ContractRequirement> _events(Object? value, PackageType type, List<String> problems) {
+    if (value == null) return const [];
+    if (type == PackageType.eventPack) {
+      problems.add('events: an event pack provides contracts; it does not consume them');
+      return const [];
+    }
+    if (value is! YamlMap) {
+      problems.add('events: must be a mapping with requires and/or optional');
+      return const [];
+    }
+    final result = <ContractRequirement>[];
+    for (final key in const ['requires', 'optional']) {
+      final list = value[key];
+      if (list == null) continue;
+      if (list is! YamlList) {
+        problems.add('events.$key: must be a list');
+        continue;
+      }
+      for (final item in list) {
+        if (item is! YamlMap || item['id'] is! String || item['version'] is! String) {
+          problems.add('events.$key: each entry needs string fields id and version');
+          continue;
+        }
+        try {
+          result.add(ContractRequirement(
+            id: item['id'] as String,
+            version: VersionConstraint.parse(item['version'] as String),
+            optional: key == 'optional',
+          ));
+        } on FormatException {
+          problems.add('events.$key.${item['id']}: version is not a constraint');
+        }
+      }
+    }
+    return result;
   }
 
   static YamlMap _asMap(Object? value, String what) {

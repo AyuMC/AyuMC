@@ -13,6 +13,10 @@ dependencies:
     path: ../ayu_events/
   ayu_logging:
     path: ../ayu_logging/
+  ayu_profile:
+    path: ../ayu_profile/
+  ayu_protocol_189:
+    path: ../ayu_protocol_189/
   ayu_runtime:
     path: ../ayu_runtime/
 

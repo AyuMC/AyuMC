@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:ayu_package/ayu_package.dart';
+import 'package:pub_semver/pub_semver.dart';
 import 'package:ayu_runtime/ayu_runtime.dart';
 import 'package:ayu_tool/ayu_tool.dart';
 import 'package:path/path.dart' as p;
@@ -100,7 +101,8 @@ void main() {
     'install, command, event, disable, enable and uninstall under dartaotruntime',
     () async {
       final host = PluginHost(
-        rootDirectory: Directory(p.join(temp.path, 'plugins')),
+        rootDirectory: Directory(p.join(temp.path, 'server')),
+        profileId: 'AyuMC-1.8.9-release',
         runtime: runtime,
         options: const PluginRuntimeOptions(
           helloTimeout: Duration(seconds: 20),
@@ -136,11 +138,18 @@ void main() {
           'Hello, console!',
         );
 
-        expect(host.emitEvent('player.join', {'player': 'steve'}), 1);
+        host.contracts.registerProvider('bench_source', [
+          EventContractSpec(id: 'player.join', version: Version(1, 0, 0), delivery: const DeliverySpec()),
+        ]);
         expect(
-          (await host.executeCommand('stats', [])).message,
-          startsWith('joins=1'),
+          host.dispatcher.publish('bench_source', const PublishedEvent(contract: 'player.join', data: {'player': 'steve'})),
+          1,
         );
+        final deadline = DateTime.now().add(const Duration(seconds: 5));
+        while ((await host.executeCommand('stats', [])).message != 'joins=1 ticks=0') {
+          if (DateTime.now().isAfter(deadline)) fail('join event was not counted');
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
 
         final pid = installed.pid!;
         final disabled = await host.disable('example_plugin');
@@ -159,7 +168,7 @@ void main() {
 
         await host.uninstall('example_plugin');
         expect(host.plugins, isEmpty);
-        expect(host.layout.installed.listSync(), isEmpty);
+        expect(host.layout.plugins.installed.listSync(), isEmpty);
 
         stdout.writeln(
           'measured: hot install to active (AOT, this machine) = ${installLatency.inMilliseconds} ms',

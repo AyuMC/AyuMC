@@ -64,6 +64,10 @@ abstract final class PluginPackager {
       artifacts: artifactSpecs,
       dependencies: project.dependencies,
       capabilities: project.capabilities,
+      packageType: project.packageType,
+      profiles: project.profiles,
+      provides: project.provides,
+      events: project.events,
       build: BuildInfo(
         tool: toolName,
         toolVersion: toolVersion,

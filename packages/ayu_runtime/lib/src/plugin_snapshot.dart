@@ -1,13 +1,18 @@
+import 'package:ayu_package/ayu_package.dart';
 import 'package:pub_semver/pub_semver.dart';
 
 import 'plugin_state.dart';
 
-/// Immutable view of a plugin for UIs and tests.
+/// Immutable view of an installed package for UIs and tests.
 final class PluginSnapshot {
   const PluginSnapshot({
     required this.id,
     required this.name,
     required this.version,
+    required this.packageType,
+    required this.provides,
+    required this.requiredContracts,
+    required this.optionalContracts,
     required this.state,
     required this.enabled,
     required this.installDirectory,
@@ -25,6 +30,12 @@ final class PluginSnapshot {
   final String id;
   final String name;
   final Version version;
+  final PackageType packageType;
+
+  /// Contracts an event pack provides (`id version (mode)`).
+  final List<String> provides;
+  final List<String> requiredContracts;
+  final List<String> optionalContracts;
   final PluginState state;
 
   /// Desired state persisted in the store.
@@ -44,6 +55,9 @@ final class PluginSnapshot {
   /// Last stderr output of the most recent worker, for diagnostics.
   final String stderrTail;
 
+  bool get isEventPack => packageType == PackageType.eventPack;
+
   @override
-  String toString() => '$id $version [${state.name}]${lastError == null ? '' : ' - $lastError'}';
+  String toString() =>
+      '$id $version [${state.name}]${isEventPack ? ' (event pack)' : ''}${lastError == null ? '' : ' - $lastError'}';
 }

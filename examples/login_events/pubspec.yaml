@@ -1,0 +1,11 @@
+name: login_events
+description: Optional AyuMC event pack that turns a 1.8.9 login start into session.login_started.
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  ayu_plugin_api:
+    path: ../../packages/ayu_plugin_api
