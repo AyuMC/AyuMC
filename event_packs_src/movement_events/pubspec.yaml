@@ -1,0 +1,11 @@
+name: movement_events
+description: Public player position contract. Coalesces to the latest position per entity. Not part of the server core.
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  ayu_plugin_api:
+    path: ../../packages/ayu_plugin_api

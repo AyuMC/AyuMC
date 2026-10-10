@@ -1,0 +1,11 @@
+name: session_audit_plugin
+description: Example plugin that records public session.joined and session.left events. Not installed with the server.
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  ayu_plugin_api:
+    path: ../../packages/ayu_plugin_api

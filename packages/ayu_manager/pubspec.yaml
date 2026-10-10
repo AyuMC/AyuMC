@@ -1,0 +1,27 @@
+name: ayu_manager
+description: Lightweight keyboard-driven terminal manager for an AyuMC server.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  ayu_core:
+    path: ../ayu_core
+  ayu_ipc:
+    path: ../ayu_ipc
+  ayu_logging:
+    path: ../ayu_logging
+  ayu_package:
+    path: ../ayu_package
+  ayu_profile:
+    path: ../ayu_profile
+  ayu_runtime:
+    path: ../ayu_runtime
+  path: ^1.9.0
+  pub_semver: ^2.1.4
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6

@@ -82,6 +82,27 @@ final class PacketBuffer {
     return value;
   }
 
+  double readDouble() {
+    if (_end - _start < 8) throw const PacketFormatException('truncated double');
+    final value = ByteData.sublistView(_bytes, _start, _start + 8).getFloat64(0, Endian.big);
+    _start += 8;
+    return value;
+  }
+
+  double readFloat() {
+    if (_end - _start < 4) throw const PacketFormatException('truncated float');
+    final value = ByteData.sublistView(_bytes, _start, _start + 4).getFloat32(0, Endian.big);
+    _start += 4;
+    return value;
+  }
+
+  bool readBool() {
+    if (_end - _start < 1) throw const PacketFormatException('truncated boolean');
+    final value = _bytes[_start] != 0;
+    _start += 1;
+    return value;
+  }
+
   void _ensure(int needed) {
     if (needed <= _bytes.length) return;
     var capacity = _bytes.length * 2;
@@ -149,6 +170,28 @@ Uint8List encodeString(String value) {
 }
 
 Uint8List encodeUnsignedShort(int value) => Uint8List.fromList([(value >> 8) & 0xFF, value & 0xFF]);
+
+Uint8List encodeInt(int value) {
+  final bytes = Uint8List(4);
+  ByteData.sublistView(bytes).setInt32(0, value, Endian.big);
+  return bytes;
+}
+
+Uint8List encodeFloat(double value) {
+  final bytes = Uint8List(4);
+  ByteData.sublistView(bytes).setFloat32(0, value, Endian.big);
+  return bytes;
+}
+
+Uint8List encodeDouble(double value) {
+  final bytes = Uint8List(8);
+  ByteData.sublistView(bytes).setFloat64(0, value, Endian.big);
+  return bytes;
+}
+
+/// Packed block position used by protocol 47: 26-bit x, 12-bit y, 26-bit z.
+Uint8List encodeBlockPosition(int x, int y, int z) =>
+    encodeLong(((x & 0x3FFFFFF) << 38) | ((y & 0xFFF) << 26) | (z & 0x3FFFFFF));
 
 Uint8List encodeLong(int value) {
   final bytes = Uint8List(8);

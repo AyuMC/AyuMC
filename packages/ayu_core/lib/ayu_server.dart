@@ -86,10 +86,11 @@ class AyuServer {
       versionName: 'AyuMC ${profile.gameVersion}',
       protocolVersion: profile.protocolVersion,
       description: 'AyuMC ${profile.id}',
+      interestedIn: (id) => plugins.primitives.hasObservers(id) || plugins.primitives.hasDeciders(id),
       onPrimitive: (id, data) {
         if (plugins.primitives.hasDeciders(id)) {
           unawaited(plugins.primitives.decide(id, data));
-        } else {
+        } else if (plugins.primitives.hasObservers(id)) {
           plugins.primitives.observe(id, data);
         }
       },

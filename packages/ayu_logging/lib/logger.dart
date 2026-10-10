@@ -1,6 +1,31 @@
 import 'log_level.dart';
 import 'utils/logger_time.dart';
 
+/// One structured log line. The terminal manager listens for these; the
+/// headless server still prints them.
+final class LogRecord {
+  LogRecord({required this.time, required this.loggerName, required this.level, required this.message});
+
+  final DateTime time;
+  final String loggerName;
+  final LogLevel level;
+  final String message;
+}
+
+/// Fan-out for log lines. Listeners must be fast; a slow UI keeps its own buffer.
+abstract final class LogHub {
+  static final List<void Function(LogRecord record)> listeners = [];
+
+  /// When false, lines are only delivered to [listeners]. Headless mode leaves this true.
+  static bool echo = true;
+
+  static void emit(LogRecord record) {
+    for (final listener in List.of(listeners)) {
+      listener(record);
+    }
+  }
+}
+
 class Logger {
   final String name;
 
@@ -24,16 +49,16 @@ class Logger {
   }
 
   void _log(LogLevel level, String message) {
-    final time = getTime();
+    final record = LogRecord(time: DateTime.now(), loggerName: name, level: level, message: message);
+    LogHub.emit(record);
+    if (!LogHub.echo) return;
 
+    final time = getTime();
     final color = switch (level) {
       LogLevel.info => _green,
       LogLevel.warn => _yellow,
       LogLevel.error => _red,
     };
-
-    final levelName = level.name.toUpperCase();
-
-    print('$color$time [$name] [$levelName] $message$_reset');
+    print('$color$time [$name] [${level.name.toUpperCase()}] $message$_reset');
   }
 }

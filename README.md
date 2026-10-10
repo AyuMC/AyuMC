@@ -23,9 +23,11 @@ not built in: administrators install optional `.ayu` event packs. See
 
 ## Run
 
+راهنمای فارسی روشن کردن سرور و وصل شدن با ماینکرفت ۱٫۸٫۹: `docs/start-here.md`.
+
 ```sh
 dart pub get
-dart run bin/ayumc.dart [--plugins <dir>]
+dart run bin/ayumc.dart --root run
 ```
 
 Console: `ping`, `say <text>`, `plugin list|info|install|enable|disable|update|uninstall`, `stop`.

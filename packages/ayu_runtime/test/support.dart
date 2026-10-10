@@ -50,6 +50,13 @@ final class JitFixtureLauncher implements WorkerLauncher {
   @override
   WorkerLaunchSpec launchSpec(PluginLaunchContext context) {
     final description = context.manifest.description ?? '';
+    if (description.startsWith('source:')) {
+      return WorkerLaunchSpec(
+        executable: dartExecutable,
+        arguments: [description.substring('source:'.length)],
+        workingDirectory: context.dataDirectory.path,
+      );
+    }
     final name = description.startsWith('fixture:') ? description.substring('fixture:'.length) : 'worker_ok';
     return WorkerLaunchSpec(
       executable: dartExecutable,
@@ -71,6 +78,7 @@ Future<File> writeFixturePackage(
   RuntimeTarget? target,
   Version? dartSdk,
   String api = '^1.0.0',
+  String? description,
   PackageType packageType = PackageType.plugin,
   List<String> profiles = const [],
   List<EventContractSpec> provides = const [],
@@ -88,7 +96,7 @@ Future<File> writeFixturePackage(
     name: 'Fixture $id',
     version: Version.parse(version),
     api: VersionConstraint.parse(api),
-    description: 'fixture:$fixtureName',
+    description: description ?? 'fixture:$fixtureName',
     entryPoint: 'src/main.dart',
     artifacts: {artifact.target.id: artifact},
     dependencies: dependencies,

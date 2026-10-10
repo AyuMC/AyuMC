@@ -9,4 +9,7 @@ library;
 
 export 'src/buffer.dart';
 export 'src/endpoint.dart';
+export 'src/flat_chunk.dart';
+export 'src/offline_uuid.dart';
+export 'src/play_session.dart';
 export 'src/primitives.dart';

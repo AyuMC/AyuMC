@@ -75,6 +75,20 @@ packages:
       relative: true
     source: path
     version: "0.1.0"
+  ayu_profile:
+    dependency: transitive
+    description:
+      path: "packages/ayu_profile"
+      relative: true
+    source: path
+    version: "0.1.0"
+  ayu_protocol_189:
+    dependency: transitive
+    description:
+      path: "packages/ayu_protocol_189"
+      relative: true
+    source: path
+    version: "0.1.0"
   ayu_runtime:
     dependency: "direct main"
     description:

@@ -27,7 +27,7 @@ export 'src/host_registry.dart';
 export 'src/plugin_host.dart';
 export 'src/plugin_snapshot.dart';
 export 'src/plugin_state.dart';
-export 'src/plugin_store.dart' show InstalledPluginRecord, PluginStoreLayout;
+export 'src/plugin_store.dart' show InstalledPluginRecord, PluginStore, PluginStoreLayout, StoredPlugin;
 export 'src/runtime_options.dart';
 export 'src/server_layout.dart';
 export 'src/worker_launcher.dart';

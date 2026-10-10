@@ -1,0 +1,31 @@
+id: movement_events
+name: Movement Events
+description: Publishes the latest accepted player position. Intermediate positions may be replaced when the queue is under pressure.
+packageType: event-pack
+api: ">=1.0.0 <2.0.0"
+entry: bin/main.dart
+profiles:
+  - AyuMC-1.8.9-release
+capabilities:
+  - observe
+  - publish
+provides:
+  - id: player.position_changed
+    version: 1.0.0
+    description: The server accepted a position from a play-state client. Delivery keeps the newest position per entityId when the queue overflows. It does not promise every intermediate packet.
+    sources:
+      - core.player.position
+    delivery:
+      overflow: coalesce
+      coalesceKey: entityId
+      queueLimit: 64
+    schema:
+      entityId: int
+      name: string
+      uuid: string
+      x: double
+      y: double
+      z: double
+      yaw: double
+      pitch: double
+      onGround: bool

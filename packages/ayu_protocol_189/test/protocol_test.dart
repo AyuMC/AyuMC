@@ -50,13 +50,48 @@ void main() {
     }
   });
 
-  test('login start emits a primitive and does not enter play', () async {
-    final seen = <String, Map<String, Object?>>{};
+  test('offline login enters play and a position packet updates the session', () async {
+    final seen = <String, List<Map<String, Object?>>>{};
     final endpoint = ProtocolEndpoint(
       versionName: 'AyuMC 1.8.9',
       protocolVersion: 47,
       description: 'test',
-      onPrimitive: (id, data) => seen[id] = data,
+      keepAliveInterval: const Duration(hours: 1),
+      onPrimitive: (id, data) => seen.putIfAbsent(id, () => []).add(data),
+    );
+    await endpoint.bind(port: 0);
+    try {
+      final socket = await Socket.connect(InternetAddress.loopbackIPv4, endpoint.port);
+      addTearDown(socket.close);
+      socket.add(_handshake(nextState: 2));
+      socket.add(encodePacket(0x00, encodeString('Steve')));
+      final packets = await _readPackets(socket, 8);
+      final login = PacketBuffer()..add(packets[0]);
+      expect(login.readVarInt(), 0x02);
+      final uuid = login.readString();
+      expect(uuid, offlinePlayerUuid('Steve'));
+      expect(login.readString(), 'Steve');
+      expect(packets[1][0], 0x01);
+      final entityId = ByteData.sublistView(packets[1], 1, 5).getInt32(0);
+      expect(seen[ProtocolPrimitive.login]?.single['name'], 'Steve');
+      expect(seen[ProtocolPrimitive.playJoined]?.single['uuid'], uuid);
+      expect(endpoint.sessions.single.entityId, entityId);
+      expect(endpoint.sessions.single.name, 'Steve');
+
+      socket.add(encodePacket(0x04, [...encodeDouble(10), ...encodeDouble(16), ...encodeDouble(12), 1]));
+      await _until(() => endpoint.sessions.single.x == 10 && endpoint.sessions.single.z == 12);
+      expect(seen[ProtocolPrimitive.position]?.last['y'], 16);
+    } finally {
+      await endpoint.close();
+    }
+  });
+
+  test('online mode refuses login instead of pretending authentication succeeded', () async {
+    final endpoint = ProtocolEndpoint(
+      versionName: 'AyuMC 1.8.9',
+      protocolVersion: 47,
+      description: 'test',
+      offlineMode: false,
     );
     await endpoint.bind(port: 0);
     try {
@@ -64,12 +99,10 @@ void main() {
       socket.add(_handshake(nextState: 2));
       socket.add(encodePacket(0x00, encodeString('Steve')));
       final packets = await _readPackets(socket, 1);
-      final disconnect = PacketBuffer()..add(packets.single);
-      expect(disconnect.readVarInt(), 0x00);
-      expect(jsonDecode(disconnect.readString()), {'text': 'AyuMC has no play session yet'});
-      expect(seen[ProtocolPrimitive.handshake]?['nextState'], 2);
-      expect(seen[ProtocolPrimitive.login]?['name'], 'Steve');
-      expect(seen[ProtocolPrimitive.handshake]?['protocol'], 47);
+      final body = PacketBuffer()..add(packets.single);
+      expect(body.readVarInt(), 0x00);
+      expect(jsonDecode(body.readString()), {'text': 'online authentication is not implemented'});
+      expect(endpoint.sessions, isEmpty);
       await socket.close();
     } finally {
       await endpoint.close();
@@ -99,6 +132,14 @@ Uint8List _handshake({int protocol = 47, int nextState = 1}) {
     ...encodeVarInt(nextState),
   ];
   return encodePacket(0x00, payload);
+}
+
+Future<void> _until(bool Function() condition) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 2));
+  while (!condition()) {
+    if (DateTime.now().isAfter(deadline)) fail('condition not met');
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
 }
 
 Future<List<Uint8List>> _readPackets(Socket socket, int count) async {
