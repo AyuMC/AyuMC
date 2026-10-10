@@ -1,0 +1,11 @@
+name: ayu_ipc
+description: Versioned, length-prefixed IPC protocol shared by the AyuMC plugin host and plugin workers.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.11.5
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6

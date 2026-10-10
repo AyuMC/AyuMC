@@ -1,0 +1,23 @@
+name: ayu_runtime
+description: Host-side plugin platform for AyuMC - package installation, supervised worker processes, lifecycle management and host registrations.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  ayu_ipc:
+    path: ../ayu_ipc
+  ayu_logging:
+    path: ../ayu_logging
+  ayu_package:
+    path: ../ayu_package
+  path: ^1.9.0
+  pub_semver: ^2.1.4
+
+dev_dependencies:
+  ayu_plugin_api:
+    path: ../ayu_plugin_api
+  lints: ^6.0.0
+  test: ^1.25.6

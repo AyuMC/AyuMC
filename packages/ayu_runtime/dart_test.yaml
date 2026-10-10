@@ -1,0 +1,4 @@
+tags:
+  # Needs a dartaotruntime and runs `dart compile aot-snapshot`; slow.
+  aot:
+    timeout: 4m

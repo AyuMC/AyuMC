@@ -1,0 +1,559 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:ayu_ipc/ayu_ipc.dart';
+import 'package:ayu_logging/ayu_logging.dart';
+import 'package:ayu_package/ayu_package.dart';
+import 'package:pub_semver/pub_semver.dart';
+
+import 'dart_runtime.dart';
+import 'errors.dart';
+import 'host_events.dart';
+import 'host_registry.dart';
+import 'plugin_instance.dart';
+import 'plugin_snapshot.dart';
+import 'plugin_state.dart';
+import 'plugin_store.dart';
+import 'runtime_options.dart';
+import 'worker_controller.dart';
+import 'worker_launcher.dart';
+import 'worker_process.dart';
+
+/// Entry point of the plugin platform for the server.
+///
+/// Every operation on a plugin is serialised per plugin id, so a disable
+/// cannot interleave with a start. Nothing here blocks the event loop; all
+/// waits are bounded by [PluginRuntimeOptions].
+final class PluginHost {
+  PluginHost({
+    required Directory rootDirectory,
+    this.options = const PluginRuntimeOptions(),
+    Logger? logger,
+    DartAotRuntime? runtime,
+    this.runtimeExecutable,
+    WorkerLauncher launcher = const AotWorkerLauncher(),
+    this.hostVersion = '0.1.0',
+  })  : _log = logger ?? Logger('Plugins'),
+        _runtime = runtime,
+        _target = RuntimeTarget.current(),
+        apiVersion = Version.parse(IpcProtocol.apiVersion) {
+    _store = PluginStore(rootDirectory, log: _log);
+    _controller = WorkerController(
+      registry: registry,
+      options: options,
+      launcher: launcher,
+      log: _log,
+      hostVersion: hostVersion,
+      onStateChanged: _onStateChanged,
+      onLog: _events.add,
+      onUnexpectedExit: _onUnexpectedExit,
+    );
+  }
+
+  final PluginRuntimeOptions options;
+  final String? runtimeExecutable;
+  final String hostVersion;
+  final Version apiVersion;
+  final HostRegistry registry = HostRegistry();
+
+  final Logger _log;
+  final RuntimeTarget _target;
+  late final PluginStore _store;
+  late final WorkerController _controller;
+  final Map<String, PluginInstance> _instances = {};
+  final Map<String, Future<void>> _locks = {};
+  final StreamController<PluginHostEvent> _events = StreamController.broadcast();
+  DartAotRuntime? _runtime;
+  PluginHostException? _runtimeError;
+  bool _started = false;
+  bool _disposed = false;
+
+  RuntimeTarget get target => _target;
+  DartAotRuntime? get runtime => _runtime;
+  Stream<PluginHostEvent> get events => _events.stream;
+  PluginStoreLayout get layout => _store.layout;
+
+  List<PluginSnapshot> get plugins =>
+      [for (final i in _instances.values) i.snapshot(enabled: _store.records[i.id]?.enabled ?? false)]
+        ..sort((a, b) => a.id.compareTo(b.id));
+
+  PluginSnapshot? plugin(String id) {
+    final instance = _instances[id];
+    return instance?.snapshot(enabled: _store.records[id]?.enabled ?? false);
+  }
+
+  /// Opens the store, locates the runtime and starts every enabled plugin
+  /// in dependency order. A missing runtime is not fatal here: it is
+  /// reported on each plugin and again on the next enable attempt.
+  Future<void> start() async {
+    if (_started) throw StateError('PluginHost already started');
+    _started = true;
+    await _store.open();
+    await _locateRuntime();
+    final stored = await _store.loadInstalled(limits: options.packageLimits);
+    for (final plugin in stored) {
+      _instances[plugin.record.id] = PluginInstance(
+        manifest: plugin.manifest,
+        installDirectory: plugin.installDirectory,
+        dataDirectory: _store.layout.dataDirectory(plugin.record.id),
+        initialState: PluginState.discovered,
+      );
+    }
+    for (final instance in _instances.values) {
+      _controllerMove(instance, PluginState.disabled);
+    }
+    for (final id in _bootOrder(stored.where((s) => s.record.enabled).map((s) => s.record.id).toSet())) {
+      try {
+        await _serialized(id, () => _startInstance(_instances[id]!));
+      } on PluginHostException catch (e) {
+        _log.error('plugin "$id" was not started: ${e.message}');
+      }
+    }
+  }
+
+  /// Stops every running worker (bounded) and releases resources.
+  Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
+    for (final instance in _instances.values) {
+      if (instance.state.hasWorker || instance.worker != null) {
+        try {
+          await _serialized(instance.id, () => _controller.stop(instance, reason: 'host shutdown'));
+        } catch (e) {
+          _log.error('stopping "${instance.id}" failed: $e');
+        }
+      }
+    }
+    await registry.dispose();
+    await _events.close();
+  }
+
+  // ------------------------------------------------------------- operations
+
+  /// Installs a package while the server runs. With [enable] the worker is
+  /// started and the plugin is active when this returns; a start failure
+  /// leaves the plugin installed in the failed state with diagnostics.
+  Future<PluginSnapshot> install(File package, {bool enable = true}) async {
+    _checkUsable();
+    final opened = await AyuPackage.open(package, limits: options.packageLimits);
+    try {
+      final manifest = opened.manifest;
+      _checkCompatibility(manifest);
+      return await _serialized(manifest.id, () async {
+        if (_instances.containsKey(manifest.id)) {
+          throw PluginHostException(PluginHostErrorCode.alreadyInstalled,
+              'plugin "${manifest.id}" ${_instances[manifest.id]!.version} is already installed; use update to replace it');
+        }
+        _checkDependencies(manifest, requireActive: enable);
+        final installDirectory = await _stage(opened);
+        final instance = PluginInstance(
+          manifest: manifest,
+          installDirectory: installDirectory,
+          dataDirectory: _store.layout.dataDirectory(manifest.id),
+          initialState: PluginState.staged,
+        );
+        _instances[manifest.id] = instance;
+        _emit(PluginStateChanged(manifest.id, PluginState.validating, PluginState.staged));
+        await _store.put(InstalledPluginRecord(id: manifest.id, version: manifest.version, enabled: enable));
+        if (enable) {
+          await _startInstance(instance);
+        } else {
+          _controllerMove(instance, PluginState.disabled);
+        }
+        return _snapshot(instance);
+      });
+    } finally {
+      await opened.close();
+    }
+  }
+
+  Future<PluginSnapshot> enable(String id) {
+    _checkUsable();
+    return _serialized(id, () async {
+      final instance = _require(id);
+      if (instance.state == PluginState.active) return _snapshot(instance);
+      if (instance.state.hasWorker) {
+        throw PluginHostException(PluginHostErrorCode.invalidState, 'plugin "$id" is ${instance.state.name}');
+      }
+      await _store.put(_store.records[id]!.copyWith(enabled: true));
+      await _startInstance(instance);
+      return _snapshot(instance);
+    });
+  }
+
+  /// Stops routing immediately, then shuts the worker down (killing it if
+  /// it ignores the request). Refused while active plugins require [id].
+  Future<PluginSnapshot> disable(String id, {String reason = 'requested'}) {
+    _checkUsable();
+    return _serialized(id, () async {
+      final instance = _require(id);
+      if (instance.state == PluginState.disabled) return _snapshot(instance);
+      _checkNoActiveDependents(id);
+      await _store.put(_store.records[id]!.copyWith(enabled: false));
+      if (instance.state.hasWorker || instance.worker != null) {
+        await _controller.stop(instance, reason: reason);
+      } else {
+        _controllerMove(instance, PluginState.disabled);
+      }
+      return _snapshot(instance);
+    });
+  }
+
+  /// Replaces an installed plugin with a different version. The new version
+  /// is staged next to the old one; the old worker is stopped only after
+  /// staging succeeded, and restarted if the new version fails to start.
+  Future<PluginSnapshot> update(File package) async {
+    _checkUsable();
+    final opened = await AyuPackage.open(package, limits: options.packageLimits);
+    try {
+      final manifest = opened.manifest;
+      _checkCompatibility(manifest);
+      return await _serialized(manifest.id, () async {
+        final current = _require(manifest.id);
+        if (current.version == manifest.version) {
+          throw PluginHostException(PluginHostErrorCode.alreadyInstalled,
+              'plugin "${manifest.id}" ${manifest.version} is already the installed version');
+        }
+        final record = _store.records[manifest.id]!;
+        final wasActive = current.state == PluginState.active;
+        _checkDependencies(manifest, requireActive: wasActive);
+        _checkDependentsAccept(manifest.id, manifest.version);
+        final installDirectory = await _stage(opened);
+        final next = PluginInstance(
+          manifest: manifest,
+          installDirectory: installDirectory,
+          dataDirectory: current.dataDirectory,
+          initialState: PluginState.staged,
+        );
+        if (current.state.hasWorker || current.worker != null) {
+          await _controller.stop(current, reason: 'update to ${manifest.version}');
+        }
+        _instances[manifest.id] = next;
+        _emit(PluginStateChanged(manifest.id, PluginState.validating, PluginState.staged));
+        await _store.put(record.copyWith(version: manifest.version));
+        if (!wasActive) {
+          _controllerMove(next, PluginState.disabled);
+          await _store.deleteInstalled(manifest.id, current.version);
+          return _snapshot(next);
+        }
+        try {
+          await _startInstance(next);
+        } on PluginHostException catch (failure) {
+          _log.error('update of "${manifest.id}" to ${manifest.version} failed; rolling back to ${current.version}');
+          _instances[manifest.id] = current;
+          await _store.put(record);
+          await _store.deleteInstalled(manifest.id, manifest.version);
+          final details = [failure.message, ...failure.details];
+          try {
+            await _startInstance(current);
+          } on PluginHostException catch (rollbackFailure) {
+            details.add('rollback failed: ${rollbackFailure.message}');
+          }
+          throw PluginHostException(PluginHostErrorCode.updateFailed,
+              'update of "${manifest.id}" to ${manifest.version} failed; ${current.version} restored',
+              details: details);
+        }
+        await _store.deleteInstalled(manifest.id, current.version);
+        return _snapshot(next);
+      });
+    } finally {
+      await opened.close();
+    }
+  }
+
+  /// Stops the plugin if needed and removes its installed files. The data
+  /// directory is kept. Refused while other installed plugins require it.
+  Future<void> uninstall(String id) {
+    _checkUsable();
+    return _serialized(id, () async {
+      final instance = _require(id);
+      final dependents = _dependentsOf(id, onlyActive: false);
+      if (dependents.isNotEmpty) {
+        throw PluginHostException(PluginHostErrorCode.dependency,
+            'cannot uninstall "$id": required by ${dependents.join(', ')}');
+      }
+      if (instance.state.hasWorker || instance.worker != null) {
+        await _controller.stop(instance, reason: 'uninstall');
+      }
+      _instances.remove(id);
+      await _store.remove(id);
+      await _store.deleteInstalled(id, instance.version);
+      _log.info('uninstalled "$id" ${instance.version}');
+    });
+  }
+
+  /// Delivers an event to every active subscriber. Returns how many workers
+  /// accepted it; congested channels drop and count instead of blocking.
+  int emitEvent(String type, Map<String, Object?> data) {
+    final subscribers = registry.subscribers(type);
+    if (subscribers.isEmpty) return 0;
+    final payload = EventEnvelope(type: type, data: data, timestampMillis: DateTime.now().millisecondsSinceEpoch).toJson();
+    var delivered = 0;
+    for (final id in List.of(subscribers)) {
+      final instance = _instances[id];
+      final worker = instance?.worker;
+      if (instance == null || worker == null || instance.state != PluginState.active) continue;
+      if (worker.channel.notify(IpcMethod.event, payload)) {
+        delivered++;
+      } else {
+        instance.droppedEvents++;
+      }
+    }
+    return delivered;
+  }
+
+  /// Executes a plugin command. Throws [PluginHostException] when the
+  /// command is unknown, its plugin is not active, or the worker fails.
+  Future<CommandResult> executeCommand(String nameOrAlias, List<String> args, {String sender = 'console'}) async {
+    final registered = registry.resolveCommand(nameOrAlias);
+    if (registered == null) {
+      throw PluginHostException(PluginHostErrorCode.commandNotFound, 'unknown command "$nameOrAlias"');
+    }
+    final instance = _instances[registered.pluginId];
+    final worker = instance?.worker;
+    if (instance == null || worker == null || instance.state != PluginState.active) {
+      throw PluginHostException(PluginHostErrorCode.commandFailed,
+          'command "$nameOrAlias" belongs to "${registered.pluginId}", which is not active');
+    }
+    try {
+      final result = await worker.channel.request(
+        IpcMethod.commandExecute,
+        CommandInvocation(name: registered.spec.name, args: args, sender: sender).toJson(),
+        options.commandTimeout,
+      );
+      return CommandResult.fromJson(result);
+    } on IpcException catch (e) {
+      throw PluginHostException(PluginHostErrorCode.commandFailed,
+          'command "$nameOrAlias" failed in plugin "${registered.pluginId}": ${e.error}');
+    }
+  }
+
+  // --------------------------------------------------------------- internals
+
+  Future<void> _locateRuntime() async {
+    if (_runtime != null) return;
+    try {
+      _runtime = await const DartRuntimeLocator().locate(explicitPath: runtimeExecutable);
+      _log.info('using ${_runtime!}');
+    } on PluginHostException catch (e) {
+      _runtimeError = e;
+      _log.error(e.toString());
+    }
+  }
+
+  DartAotRuntime _requireRuntime() {
+    final runtime = _runtime;
+    if (runtime == null) {
+      throw _runtimeError ??
+          const PluginHostException(PluginHostErrorCode.runtimeUnavailable, 'plugin runtime is not available');
+    }
+    return runtime;
+  }
+
+  Future<void> _startInstance(PluginInstance instance) async {
+    final runtime = _requireRuntime();
+    _checkArtifactCompatibility(instance.manifest, runtime);
+    _checkDependencies(instance.manifest, requireActive: true);
+    await _controller.start(instance, runtime);
+  }
+
+  /// Extracts the opened package into staging, then commits it atomically.
+  Future<Directory> _stage(AyuPackage package) async {
+    final staging = await _store.createStagingDirectory();
+    try {
+      await package.extractTo(staging);
+    } catch (_) {
+      await _store.discard(staging);
+      rethrow;
+    }
+    return _store.commit(staged: staging, id: package.manifest.id, version: package.manifest.version);
+  }
+
+  /// Rejects packages this host cannot run, with the reason spelled out.
+  void _checkCompatibility(PluginManifest manifest) {
+    if (!manifest.api.allows(apiVersion)) {
+      throw PluginHostException(PluginHostErrorCode.incompatible,
+          'plugin "${manifest.id}" requires plugin API ${manifest.api}; this host provides $apiVersion');
+    }
+    final runtime = _runtime;
+    if (runtime != null) {
+      _checkArtifactCompatibility(manifest, runtime);
+    } else if (manifest.artifactFor(_target) == null) {
+      throw _noArtifact(manifest);
+    }
+  }
+
+  void _checkArtifactCompatibility(PluginManifest manifest, DartAotRuntime runtime) {
+    final artifact = manifest.artifactFor(runtime.target);
+    if (artifact == null) throw _noArtifact(manifest);
+    if (artifact.dartSdk != runtime.version) {
+      throw PluginHostException(PluginHostErrorCode.incompatible,
+          'plugin "${manifest.id}" artifact for ${runtime.target} was built with Dart ${artifact.dartSdk}; '
+          'this server runs dartaotruntime ${runtime.version}. AOT snapshots only run on the exact SDK version '
+          'that produced them: rebuild the plugin with Dart ${runtime.version}.');
+    }
+  }
+
+  PluginHostException _noArtifact(PluginManifest manifest) => PluginHostException(
+        PluginHostErrorCode.incompatible,
+        'plugin "${manifest.id}" has no runtime artifact for ${_target.id}'
+        '${manifest.artifacts.isEmpty ? ' (source-only package)' : '; it ships ${manifest.artifacts.keys.join(', ')}'}. '
+        'Build it with `ayu plugin build --target ${_target.id}` and repackage.',
+      );
+
+  void _checkDependencies(PluginManifest manifest, {required bool requireActive}) {
+    final problems = <String>[];
+    for (final dependency in manifest.dependencies) {
+      final installed = _instances[dependency.id];
+      if (installed == null) {
+        if (!dependency.optional) problems.add('"${dependency.id}" ${dependency.version} is not installed');
+        continue;
+      }
+      if (!dependency.version.allows(installed.version)) {
+        if (!dependency.optional) {
+          problems.add('"${dependency.id}" ${installed.version} is installed but ${dependency.version} is required');
+        }
+        continue;
+      }
+      if (requireActive && !dependency.optional && installed.state != PluginState.active) {
+        problems.add('"${dependency.id}" is ${installed.state.name}; enable it first');
+      }
+    }
+    if (problems.isNotEmpty) {
+      throw PluginHostException(PluginHostErrorCode.dependency,
+          'plugin "${manifest.id}" has unsatisfied dependencies', details: problems);
+    }
+  }
+
+  void _checkNoActiveDependents(String id) {
+    final dependents = _dependentsOf(id, onlyActive: true);
+    if (dependents.isNotEmpty) {
+      throw PluginHostException(PluginHostErrorCode.dependency,
+          'cannot disable "$id": required by active plugin(s) ${dependents.join(', ')}; disable them first');
+    }
+  }
+
+  /// Before an update, every dependent's constraint must accept the new
+  /// version, otherwise the dependent would break silently.
+  void _checkDependentsAccept(String id, Version next) {
+    final rejecting = <String>[
+      for (final other in _instances.values)
+        for (final dependency in other.manifest.requiredDependencies)
+          if (dependency.id == id && !dependency.version.allows(next)) '"${other.id}" requires $id ${dependency.version}',
+    ];
+    if (rejecting.isNotEmpty) {
+      throw PluginHostException(PluginHostErrorCode.dependency,
+          'cannot update "$id" to $next', details: rejecting);
+    }
+  }
+
+  List<String> _dependentsOf(String id, {required bool onlyActive}) => [
+        for (final other in _instances.values)
+          if (other.id != id &&
+              (!onlyActive || other.state == PluginState.active) &&
+              other.manifest.requiredDependencies.any((d) => d.id == id))
+            other.id,
+      ];
+
+  /// Topological order over required dependencies; members of a cycle are
+  /// reported and skipped.
+  List<String> _bootOrder(Set<String> ids) {
+    final remaining = Set.of(ids);
+    final order = <String>[];
+    while (remaining.isNotEmpty) {
+      final ready = remaining.where((id) {
+        final deps = _instances[id]!.manifest.requiredDependencies.map((d) => d.id);
+        return deps.every((d) => !remaining.contains(d));
+      }).toList()
+        ..sort();
+      if (ready.isEmpty) {
+        for (final id in remaining) {
+          final instance = _instances[id]!;
+          instance.lastError = 'dependency cycle involving ${remaining.join(', ')}';
+          _log.error('plugin "$id" not started: ${instance.lastError}');
+        }
+        break;
+      }
+      order.addAll(ready);
+      remaining.removeAll(ready);
+    }
+    return order;
+  }
+
+  void _onUnexpectedExit(PluginInstance instance, int exitCode) {
+    unawaited(_serialized(instance.id, () async {
+      final worker = instance.worker;
+      if (worker == null || instance.state != PluginState.active) return;
+      registry.removeAll(instance.id);
+      instance.recordWorkerFailure(worker, 'worker exited unexpectedly with code $exitCode');
+      await worker.dispose();
+      instance.worker = null;
+      _controllerMove(instance, PluginState.crashed, error: instance.lastError);
+      if (!options.restartOnCrash) return;
+      final allowed = instance.consumeRestartBudget(
+          maxRestarts: options.maxRestarts, window: options.restartWindow, now: DateTime.now());
+      if (!allowed) {
+        _log.error('plugin "${instance.id}" crashed ${options.maxRestarts} times within '
+            '${options.restartWindow.inSeconds}s; leaving it crashed');
+        return;
+      }
+      _log.warn('restarting "${instance.id}" after crash (${instance.restartTimes.length}/${options.maxRestarts})');
+      try {
+        await _startInstance(instance);
+      } on PluginHostException catch (e) {
+        _log.error('restart of "${instance.id}" failed: ${e.message}');
+      }
+    }));
+  }
+
+  void _onStateChanged(PluginInstance instance, PluginState from, PluginState to, {String? error}) {
+    _log.info('[${instance.id}] ${from.name} -> ${to.name}${error == null ? '' : ': $error'}');
+    _emit(PluginStateChanged(instance.id, from, to, error: error));
+  }
+
+  void _controllerMove(PluginInstance instance, PluginState to, {String? error}) {
+    final from = instance.transition(to);
+    _onStateChanged(instance, from, to, error: error);
+  }
+
+  void _emit(PluginHostEvent event) {
+    if (!_events.isClosed) _events.add(event);
+  }
+
+  PluginInstance _require(String id) {
+    final instance = _instances[id];
+    if (instance == null) {
+      throw PluginHostException(PluginHostErrorCode.notInstalled, 'plugin "$id" is not installed');
+    }
+    return instance;
+  }
+
+  PluginSnapshot _snapshot(PluginInstance instance) =>
+      instance.snapshot(enabled: _store.records[instance.id]?.enabled ?? false);
+
+  void _checkUsable() {
+    if (!_started) throw StateError('PluginHost.start() has not been called');
+    if (_disposed) throw StateError('PluginHost is disposed');
+  }
+
+  /// Runs [action] after every earlier operation on [id] finished.
+  Future<T> _serialized<T>(String id, Future<T> Function() action) {
+    final previous = _locks[id] ?? Future<void>.value();
+    final completer = Completer<void>();
+    _locks[id] = completer.future;
+    return previous.then((_) => action()).whenComplete(() {
+      completer.complete();
+      if (identical(_locks[id], completer.future)) _locks.remove(id);
+    });
+  }
+}
+
+/// Exposed for diagnostics: termination outcomes are logged with this name.
+extension TerminationOutcomeLabel on TerminationOutcome {
+  String get label => switch (this) {
+        TerminationOutcome.exitedGracefully => 'exited gracefully',
+        TerminationOutcome.killed => 'killed after grace period',
+        TerminationOutcome.killFailed => 'kill did not complete',
+        TerminationOutcome.alreadyExited => 'already exited',
+      };
+}

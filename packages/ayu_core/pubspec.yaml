@@ -1,23 +1,20 @@
 name: ayu_core
-description: A starting point for Dart libraries or applications.
+description: AyuMC server core - lifecycle, built-in commands and the plugin host integration.
 version: 1.0.0
 publish_to: none
-# repository: https://github.com/my_org/my_repo
 
 environment:
   sdk: ^3.11.5
 
-# Add regular dependencies here.
 dependencies:
-  # path: ^1.9.0
-  ayu_logging:
-    path: ../ayu_logging/
   ayu_commands:
     path: ../ayu_commands/
   ayu_events:
     path: ../ayu_events/
-  ayu_plugin_api:
-    path: ../ayu_plugin_api/
+  ayu_logging:
+    path: ../ayu_logging/
+  ayu_runtime:
+    path: ../ayu_runtime/
 
 dev_dependencies:
   lints: ^6.0.0

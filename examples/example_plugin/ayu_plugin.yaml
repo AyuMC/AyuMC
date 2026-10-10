@@ -1,0 +1,19 @@
+# Plugin project descriptor read by `ayu plugin build` and `ayu plugin package`.
+# Values here become the manifest.json inside the .ayu archive.
+id: example_plugin
+name: Example Plugin
+# version defaults to the pubspec version when omitted.
+description: Reference plugin with a greeting command, event counters and a periodic tick.
+authors:
+  - AyuMC
+license: MIT
+api: ">=1.0.0 <2.0.0"
+entry: bin/main.dart
+capabilities:
+  - commands
+  - events
+  - config
+dependencies: []
+assets:
+  - assets
+config: config

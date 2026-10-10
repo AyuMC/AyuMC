@@ -1,0 +1,4 @@
+analyzer:
+  errors:
+    avoid_relative_lib_imports: ignore
+include: package:lints/recommended.yaml

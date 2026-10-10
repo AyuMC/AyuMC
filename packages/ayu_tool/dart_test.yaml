@@ -1,0 +1,4 @@
+tags:
+  # Compiles the example plugin with `dart compile aot-snapshot`; slow.
+  aot:
+    timeout: 5m

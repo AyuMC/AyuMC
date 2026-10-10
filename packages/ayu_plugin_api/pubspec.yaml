@@ -1,15 +1,14 @@
 name: ayu_plugin_api
-description: A starting point for Dart libraries or applications.
+description: Official AyuMC plugin SDK. Plugins compile against this package and run in their own worker process.
 version: 1.0.0
 publish_to: none
-# repository: https://github.com/my_org/my_repo
 
 environment:
   sdk: ^3.11.5
 
-# Add regular dependencies here.
 dependencies:
-  # path: ^1.9.0
+  ayu_ipc:
+    path: ../ayu_ipc
 
 dev_dependencies:
   lints: ^6.0.0

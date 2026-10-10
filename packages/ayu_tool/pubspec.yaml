@@ -1,0 +1,24 @@
+name: ayu_tool
+description: Developer command line for AyuMC plugins - compiles runtime artifacts and assembles `.ayu` packages.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.11.5
+
+executables:
+  ayu: ayu
+
+dependencies:
+  args: ^2.7.0
+  ayu_package:
+    path: ../ayu_package
+  path: ^1.9.0
+  pub_semver: ^2.1.4
+  yaml: ^3.1.3
+
+dev_dependencies:
+  ayu_runtime:
+    path: ../ayu_runtime
+  lints: ^6.0.0
+  test: ^1.25.6
