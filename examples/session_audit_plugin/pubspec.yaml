@@ -9,3 +9,5 @@ environment:
 dependencies:
   ayu_plugin_api:
     path: ../../packages/ayu_plugin_api
+  ayu_session_contracts:
+    path: ../../packages/ayu_session_contracts

@@ -26,6 +26,10 @@ final class PluginInstance {
   String? lastError;
   int? lastExitCode;
   String lastStderrTail = '';
+  String configState = '';
+  int configRevision = 0;
+  int? configSchema;
+  String? configError;
   int droppedEvents = 0;
   final List<DateTime> restartTimes = [];
 
@@ -93,5 +97,9 @@ final class PluginInstance {
     lastError: lastError,
     lastExitCode: lastExitCode,
     stderrTail: lastStderrTail,
+    configState: configState,
+    configRevision: configRevision,
+    configSchema: configSchema,
+    configError: configError,
   );
 }

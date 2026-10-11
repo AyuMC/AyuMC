@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'context.dart';
+import 'listeners.dart';
 
 /// Base class of every AyuMC plugin.
 ///
@@ -11,6 +12,15 @@ import 'context.dart';
 /// terminated with it.
 abstract class AyuPlugin {
   PluginContext? _context;
+
+  /// Handlers subscribed by the runner. Keep the listener instances in fields.
+  List<Listener> get listeners => const [];
+
+  /// Console commands registered by the runner. Not Minecraft chat commands.
+  List<PluginCommand> get commands => const [];
+
+  /// Called once the host context exists. The default plugin is already that object.
+  AyuPlugin materialize(PluginContext context) => this;
 
   /// Access to the host. Available from [onEnable] until the process ends.
   PluginContext get context {

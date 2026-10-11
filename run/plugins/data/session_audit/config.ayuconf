@@ -1,0 +1,17 @@
+# AyuConfig schema 1. TOML 1.0.
+# Saving a valid file applies it without restarting the plugin.
+
+[ayu]
+schema-version = 1
+
+[messages]
+# Logged when a play session starts.
+join = "PLAYER_JOINED username = Hello Dear {session_audit.player.name}"
+# Logged when a play session ends.
+leave = "PLAYER_LEFT username={session_audit.player.name}"
+
+[logging]
+# Write the join line.
+log-joins = true
+# Write the leave line.
+log-leaves = true

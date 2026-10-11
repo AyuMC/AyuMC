@@ -7,6 +7,7 @@
 /// IPC channel; there are no shared objects.
 library;
 
+export 'package:ayu_config/ayu_config.dart';
 export 'package:ayu_ipc/ayu_ipc.dart'
     show
         CommandInvocation,
@@ -23,5 +24,6 @@ export 'package:ayu_ipc/ayu_ipc.dart'
         Verdict;
 
 export 'src/context.dart';
+export 'src/listeners.dart';
 export 'src/plugin.dart' hide attachContext;
-export 'src/runner.dart' show PluginExitCode, PluginRunnerOptions, runPlugin, sdkVersion;
+export 'src/runner.dart' show Ayu, PluginExitCode, PluginRunnerOptions, runPlugin, sdkVersion;

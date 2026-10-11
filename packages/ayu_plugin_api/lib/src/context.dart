@@ -102,6 +102,17 @@ final class PluginContext {
 
   bool hasCapability(String capability) => capabilities.contains(capability);
 
+  /// Tells the manager that a configuration file was applied or rejected.
+  /// This does not restart the worker.
+  void reportConfigStatus({required String state, required int revision, String? error, int? schemaVersion}) {
+    _link.notify(IpcMethod.configStatus, {
+      'state': state,
+      'revision': revision,
+      if (schemaVersion != null) 'schema': schemaVersion,
+      if (error != null && error.isNotEmpty) 'error': error,
+    });
+  }
+
   /// Re-reads the configuration from the host.
   Future<Map<String, Object?>> reloadConfig() async {
     _requireCapability(PluginCapability.config);

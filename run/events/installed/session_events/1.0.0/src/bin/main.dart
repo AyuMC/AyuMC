@@ -16,8 +16,8 @@ final class _SessionEvents extends AyuPlugin {
   }
 
   Map<String, Object?> _identity(PrimitiveEnvelope primitive) => {
-        'entityId': primitive.data['entityId'] ?? 0,
-        'name': primitive.data['name'] ?? '',
-        'uuid': primitive.data['uuid'] ?? '',
-      };
+    'entityId': primitive.data['entityId'] ?? 0,
+    'name': primitive.data['name'] ?? '',
+    'uuid': primitive.data['uuid'] ?? '',
+  };
 }

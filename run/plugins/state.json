@@ -9,7 +9,7 @@
     {
       "id": "session_audit",
       "version": "1.0.0",
-      "enabled": false
+      "enabled": true
     }
   ]
 }

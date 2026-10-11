@@ -50,6 +50,26 @@ final class PluginRunnerOptions {
   final bool exitProcess;
 }
 
+/// Builds the plugin after the host context exists, then runs it.
+abstract final class Ayu {
+  static Future<int> run(
+    AyuPlugin Function(PluginContext context) create, {
+    PluginRunnerOptions options = const PluginRunnerOptions(),
+  }) {
+    return runPlugin(_FactoryPlugin(create), options: options);
+  }
+}
+
+final class _FactoryPlugin extends AyuPlugin {
+  _FactoryPlugin(this._create);
+
+  final AyuPlugin Function(PluginContext context) _create;
+  AyuPlugin? _child;
+
+  @override
+  AyuPlugin materialize(PluginContext context) => _child ??= _create(context);
+}
+
 /// Runs [plugin] until the host asks it to stop. Returns the exit code when
 /// [PluginRunnerOptions.exitProcess] is false; otherwise exits the process.
 Future<int> runPlugin(
@@ -77,6 +97,9 @@ final class _PluginRunner implements HostLink {
   final Completer<int> _exit = Completer<int>();
   final Completer<void> _initReceived = Completer<void>();
   PluginContext? _context;
+  AyuPlugin? _active;
+  final List<EventSubscription> _ownedEvents = [];
+  final List<CommandRegistration> _ownedCommands = [];
   bool _shuttingDown = false;
 
   @override
@@ -229,10 +252,15 @@ final class _PluginRunner implements HostLink {
     );
     _context = context;
     attachContext(_plugin, context);
+    final active = _plugin.materialize(context);
+    _active = active;
+    if (!identical(active, _plugin)) attachContext(active, context);
     if (!_initReceived.isCompleted) _initReceived.complete();
     try {
-      await _plugin.onEnable();
+      await _bind(active);
+      await active.onEnable();
     } catch (error, stackTrace) {
+      await _releaseOwned();
       context.timers.cancelAll();
       throw IpcException.code(
         IpcErrorCode.internal,
@@ -241,6 +269,52 @@ final class _PluginRunner implements HostLink {
       );
     }
     return const <String, Object?>{};
+  }
+
+  Future<void> _bind(AyuPlugin plugin) async {
+    final context = _context;
+    if (context == null) return;
+    for (final listener in plugin.listeners) {
+      for (final handler in listener.handlers) {
+        _ownedEvents.add(
+          await context.events.subscribe(handler.contractId, (event) {
+            handler.dispatch(event.data);
+          }),
+        );
+      }
+    }
+    for (final command in plugin.commands) {
+      _ownedCommands.add(
+        await context.commands.register(
+          command.name,
+          command.execute,
+          description: command.description,
+          usage: command.usage,
+          aliases: command.aliases,
+        ),
+      );
+    }
+  }
+
+  Future<void> _releaseOwned() async {
+    final events = List.of(_ownedEvents);
+    final commands = List.of(_ownedCommands);
+    _ownedEvents.clear();
+    _ownedCommands.clear();
+    for (final subscription in events) {
+      try {
+        await subscription.cancel();
+      } catch (error, stackTrace) {
+        _context?.log.error('event cleanup failed', error, stackTrace);
+      }
+    }
+    for (final command in commands) {
+      try {
+        await command.unregister();
+      } catch (error, stackTrace) {
+        _context?.log.error('command cleanup failed', error, stackTrace);
+      }
+    }
   }
 
   Future<Object?> _shutdown(ShutdownRequest request) async {
@@ -258,8 +332,9 @@ final class _PluginRunner implements HostLink {
   Future<void> _disable(Duration grace) async {
     final context = _context;
     if (context == null) return;
+    final active = _active ?? _plugin;
     try {
-      await Future.sync(_plugin.onDisable).timeout(grace);
+      await Future.sync(active.onDisable).timeout(grace);
     } on TimeoutException {
       context.log.error(
         'onDisable exceeded its ${grace.inMilliseconds} ms grace period',
@@ -267,6 +342,7 @@ final class _PluginRunner implements HostLink {
     } catch (error, stackTrace) {
       context.log.error('onDisable failed', error, stackTrace);
     } finally {
+      await _releaseOwned();
       context.timers.cancelAll();
     }
   }

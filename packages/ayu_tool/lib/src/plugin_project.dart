@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:ayu_package/ayu_package.dart';
 import 'package:path/path.dart' as p;
 import 'package:pub_semver/pub_semver.dart';
+import 'package:toml/toml.dart';
 import 'package:yaml/yaml.dart';
 
 import 'tool_exception.dart';
@@ -31,6 +32,7 @@ final class PluginProject {
   });
 
   static const descriptorFileName = 'ayu_plugin.yaml';
+  static const tomlDescriptorFileName = 'ayu.package.toml';
 
   final Directory root;
   final String id;
@@ -58,21 +60,39 @@ final class PluginProject {
 
   static Future<PluginProject> load(Directory directory) async {
     final root = Directory(p.normalize(p.absolute(directory.path)));
-    final descriptorFile = File(p.join(root.path, descriptorFileName));
-    if (!await descriptorFile.exists()) {
-      throw ToolException('no $descriptorFileName in ${root.path}');
-    }
+    final tomlFile = File(p.join(root.path, tomlDescriptorFileName));
+    final yamlFile = File(p.join(root.path, descriptorFileName));
     final pubspecFile = File(p.join(root.path, 'pubspec.yaml'));
+    if (!await tomlFile.exists() && !await yamlFile.exists()) {
+      throw ToolException('no $tomlDescriptorFileName or $descriptorFileName in ${root.path}');
+    }
     if (!await pubspecFile.exists()) {
       throw ToolException('no pubspec.yaml in ${root.path}; a plugin project is a Dart package');
     }
-    final YamlMap descriptor;
-    final YamlMap pubspec;
+    final String sourceName;
+    final Map<String, Object?> descriptor;
     try {
-      descriptor = _asMap(loadYaml(await descriptorFile.readAsString()), descriptorFileName);
-      pubspec = _asMap(loadYaml(await pubspecFile.readAsString()), 'pubspec.yaml');
+      if (await tomlFile.exists()) {
+        sourceName = tomlDescriptorFileName;
+        descriptor = _plainMap(TomlDocument.parse(await tomlFile.readAsString()).toMap());
+      } else if (await yamlFile.exists()) {
+        sourceName = descriptorFileName;
+        descriptor = _plainMap(_asMap(loadYaml(await yamlFile.readAsString()), descriptorFileName));
+      } else {
+        throw ToolException('no $tomlDescriptorFileName or $descriptorFileName in ${root.path}');
+      }
     } on YamlException catch (e) {
       throw ToolException('cannot parse project descriptor: ${e.message}');
+    } on ToolException {
+      rethrow;
+    } on Object catch (e) {
+      throw ToolException('cannot parse project descriptor: $e');
+    }
+    final YamlMap pubspec;
+    try {
+      pubspec = _asMap(loadYaml(await pubspecFile.readAsString()), 'pubspec.yaml');
+    } on YamlException catch (e) {
+      throw ToolException('cannot parse pubspec.yaml: ${e.message}');
     }
 
     final problems = <String>[];
@@ -122,9 +142,9 @@ final class PluginProject {
     final capabilities = _stringList(descriptor['capabilities'], 'capabilities', problems).toSet();
     final dependencies = <DependencySpec>[];
     final rawDependencies = descriptor['dependencies'];
-    if (rawDependencies is YamlList) {
+    if (rawDependencies is List) {
       for (final item in rawDependencies) {
-        if (item is YamlMap && item['id'] is String && item['version'] is String) {
+        if (item is Map && item['id'] is String && item['version'] is String) {
           try {
             dependencies.add(DependencySpec(
               id: item['id'] as String,
@@ -138,7 +158,7 @@ final class PluginProject {
           problems.add('dependencies: each entry needs string fields id and version');
         }
       }
-    } else if (rawDependencies is YamlMap) {
+    } else if (rawDependencies is Map) {
       for (final entry in rawDependencies.entries) {
         try {
           dependencies.add(DependencySpec(id: '${entry.key}', version: VersionConstraint.parse('${entry.value}')));
@@ -162,7 +182,7 @@ final class PluginProject {
     final provides = _provides(descriptor['provides'], packageType, problems);
     final events = _events(descriptor['events'], packageType, problems);
     if (problems.isNotEmpty) {
-      throw ToolException('invalid $descriptorFileName in ${root.path}', details: problems);
+      throw ToolException('invalid $sourceName in ${root.path}', details: problems);
     }
     return PluginProject._(
       root: root,
@@ -202,13 +222,13 @@ final class PluginProject {
       problems.add('provides: only an event pack may declare contracts');
       return const [];
     }
-    if (value is! YamlList) {
+    if (value is! List) {
       problems.add('provides: must be a list');
       return const [];
     }
     final result = <EventContractSpec>[];
     for (final item in value) {
-      if (item is! YamlMap || item['id'] is! String || item['version'] is! String) {
+      if (item is! Map || item['id'] is! String || item['version'] is! String) {
         problems.add('provides: each contract needs string fields id and version');
         continue;
       }
@@ -226,8 +246,8 @@ final class PluginProject {
         id: item['id'] as String,
         version: version,
         delivery: delivery,
-        sources: sources is YamlList ? sources.whereType<String>().toList() : const [],
-        schema: schema is YamlMap ? schema.cast<String, String>() : const {},
+        sources: sources is List ? sources.whereType<String>().toList() : const [],
+        schema: schema is Map ? schema.map((key, value) => MapEntry('$key', '$value')) : const {},
         description: item['description'] is String ? item['description'] as String : null,
       ));
     }
@@ -240,7 +260,7 @@ final class PluginProject {
       problems.add('events: an event pack provides contracts; it does not consume them');
       return const [];
     }
-    if (value is! YamlMap) {
+    if (value is! Map) {
       problems.add('events: must be a mapping with requires and/or optional');
       return const [];
     }
@@ -248,12 +268,12 @@ final class PluginProject {
     for (final key in const ['requires', 'optional']) {
       final list = value[key];
       if (list == null) continue;
-      if (list is! YamlList) {
+      if (list is! List) {
         problems.add('events.$key: must be a list');
         continue;
       }
       for (final item in list) {
-        if (item is! YamlMap || item['id'] is! String || item['version'] is! String) {
+        if (item is! Map || item['id'] is! String || item['version'] is! String) {
           problems.add('events.$key: each entry needs string fields id and version');
           continue;
         }
@@ -278,8 +298,18 @@ final class PluginProject {
 
   static List<String> _stringList(Object? value, String key, List<String> problems) {
     if (value == null) return const [];
-    if (value is YamlList && value.every((e) => e is String)) return value.cast<String>().toList();
+    if (value is List && value.every((e) => e is String)) return value.cast<String>().toList();
     problems.add('$key: must be a list of strings');
     return const [];
+  }
+
+  static Map<String, Object?> _plainMap(Map<dynamic, dynamic> raw) => {
+    for (final entry in raw.entries) '${entry.key}': _plain(entry.value),
+  };
+
+  static Object? _plain(Object? value) {
+    if (value is Map) return _plainMap(value);
+    if (value is List) return [for (final item in value) _plain(item)];
+    return value;
   }
 }

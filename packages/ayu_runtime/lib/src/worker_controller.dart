@@ -223,6 +223,8 @@ final class WorkerController {
     switch (method) {
       case IpcMethod.log:
         _handleLog(instance, LogNotification.fromJson(params));
+      case IpcMethod.configStatus:
+        _handleConfigStatus(instance, params);
       case IpcMethod.eventPublish:
         if (_canPublish(instance)) dispatcher.publish(instance.id, PublishedEvent.fromJson(params));
       case IpcMethod.eventPublishBatch:
@@ -240,6 +242,19 @@ final class WorkerController {
       return false;
     }
     return instance.state == PluginState.active && instance.providerRegistered;
+  }
+
+  void _handleConfigStatus(PluginInstance instance, Object? params) {
+    if (params is! Map) return;
+    final state = params['state'];
+    final revision = params['revision'];
+    if (state is! String || revision is! int) return;
+    instance.configState = state;
+    instance.configRevision = revision;
+    instance.configSchema = params['schema'] is int ? params['schema'] as int : null;
+    final error = params['error'];
+    instance.configError = error is String && error.isNotEmpty ? error : null;
+    log.info('[${instance.id}] config $state revision $revision${instance.configError == null ? '' : ': ${instance.configError}'}');
   }
 
   void _handleLog(PluginInstance instance, LogNotification entry) {

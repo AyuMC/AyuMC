@@ -30,6 +30,9 @@ abstract final class IpcMethod {
   static const eventUnsubscribe = 'event.unsubscribe';
   static const configGet = 'config.get';
 
+  /// Worker -> host: the plugin applied or rejected a configuration file.
+  static const configStatus = 'config.status';
+
   /// Event packs: observe internal primitives (capability `observe`).
   static const observeSubscribe = 'observe.subscribe';
   static const observeUnsubscribe = 'observe.unsubscribe';

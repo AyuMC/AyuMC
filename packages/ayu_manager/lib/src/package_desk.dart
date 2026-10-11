@@ -241,6 +241,10 @@ final class PackageDesk {
       restartCount: snapshot.restartCount,
       droppedEvents: snapshot.droppedEvents,
       subscribers: subscribers,
+      configState: snapshot.configState,
+      configRevision: snapshot.configRevision,
+      configSchema: snapshot.configSchema,
+      configError: snapshot.configError,
       installDirectory: snapshot.installDirectory,
       dataDirectory: snapshot.dataDirectory,
     );

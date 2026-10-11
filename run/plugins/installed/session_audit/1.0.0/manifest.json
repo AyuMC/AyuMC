@@ -4,18 +4,22 @@
   "id": "session_audit",
   "name": "Session Audit",
   "version": "1.0.0",
+  "profiles": [
+    "AyuMC-1.8.9-release"
+  ],
   "description": "Logs one line when a play session starts and one line when it ends.",
   "api": ">=1.0.0 <2.0.0",
   "entryPoint": "src/bin/main.dart",
   "artifacts": {
     "windows-x64": {
       "path": "bin/windows-x64/plugin.aot",
-      "sha256": "9215c0b24a28d34d87bc0188e0406a221495d469825e50145a64b89e62814c0d",
-      "size": 1158008,
+      "sha256": "54d3615257d062e3e91b283dc495469ba198f04270b47b1f7c653a4e395318eb",
+      "size": 1687456,
       "dartSdk": "3.13.4"
     }
   },
   "capabilities": [
+    "config",
     "events"
   ],
   "events": {
@@ -34,6 +38,6 @@
     "tool": "ayu",
     "toolVersion": "0.1.0",
     "dartSdk": "3.13.4",
-    "createdAt": "2026-10-10T18:30:45.246718Z"
+    "createdAt": "2026-10-11T08:31:39.767519Z"
   }
 }

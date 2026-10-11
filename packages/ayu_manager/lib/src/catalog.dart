@@ -71,6 +71,10 @@ final class InstalledPackage {
     this.restartCount = 0,
     this.droppedEvents = 0,
     this.subscribers = const [],
+    this.configState = '',
+    this.configRevision = 0,
+    this.configSchema,
+    this.configError,
   });
 
   final PluginManifest manifest;
@@ -90,6 +94,12 @@ final class InstalledPackage {
   final List<String> subscribers;
   final String installDirectory;
   final String dataDirectory;
+
+  /// Empty until the worker reports an AyuConfig reload.
+  final String configState;
+  final int configRevision;
+  final int? configSchema;
+  final String? configError;
 }
 
 /// Snapshot of what the manager may show. Replaced as a whole after each refresh.
@@ -584,6 +594,10 @@ List<String> describeSelection({
       if (installed.subscribers.isNotEmpty)
         '  subscribed now ${installed.subscribers.join(', ')}',
       if (installed.lastError != null) '  error ${installed.lastError}',
+      if (installed.configState.isNotEmpty) '  config ${installed.configState} revision ${installed.configRevision}',
+      if (installed.configSchema != null) '  config schema ${installed.configSchema}',
+      if (installed.configError != null) '  config error ${installed.configError}',
+      if (installed.configState.isNotEmpty) '  config file ${installed.dataDirectory}\\config.ayuconf',
     ]);
     final stderr = installed.stderrTail.trim();
     if (stderr.isNotEmpty) {

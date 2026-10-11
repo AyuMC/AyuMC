@@ -1,0 +1,17 @@
+# Source package descriptor. The build tool writes the .ayu manifest from this file.
+id = "session_audit"
+name = "Session Audit"
+description = "Logs one line when a play session starts and one line when it ends."
+version = "1.0.0"
+api = ">=1.0.0 <2.0.0"
+entry = "bin/main.dart"
+profiles = ["AyuMC-1.8.9-release"]
+capabilities = ["events", "config"]
+
+[[events.requires]]
+id = "session.joined"
+version = "^1.0.0"
+
+[[events.requires]]
+id = "session.left"
+version = "^1.0.0"

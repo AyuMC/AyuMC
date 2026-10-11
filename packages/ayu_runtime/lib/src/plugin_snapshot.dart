@@ -25,6 +25,10 @@ final class PluginSnapshot {
     required this.lastError,
     required this.lastExitCode,
     required this.stderrTail,
+    this.configState = '',
+    this.configRevision = 0,
+    this.configSchema,
+    this.configError,
   });
 
   final String id;
@@ -54,6 +58,12 @@ final class PluginSnapshot {
 
   /// Last stderr output of the most recent worker, for diagnostics.
   final String stderrTail;
+
+  /// Last reported AyuConfig reload state, empty when the plugin has not reported one.
+  final String configState;
+  final int configRevision;
+  final int? configSchema;
+  final String? configError;
 
   bool get isEventPack => packageType == PackageType.eventPack;
 
