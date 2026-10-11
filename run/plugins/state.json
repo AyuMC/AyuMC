@@ -1,0 +1,15 @@
+{
+  "formatVersion": 1,
+  "plugins": [
+    {
+      "id": "example_plugin",
+      "version": "1.0.0",
+      "enabled": true
+    },
+    {
+      "id": "session_audit",
+      "version": "1.0.0",
+      "enabled": false
+    }
+  ]
+}

@@ -75,7 +75,9 @@ final class CatalogScreen {
         filter = '';
         return null;
       }
-      return const CatalogCommand.action(CatalogAction.home);
+      // Stay on this page. One Esc key can arrive twice; the second must
+      // not leave the list for Home.
+      return null;
     }
     if (!detail && event.key == ManagerKey.up) {
       _move(-1);
@@ -393,10 +395,8 @@ final class CatalogScreen {
     final index = selectable.indexWhere(
       (row) => row.identity == selectedIdentity,
     );
-    final next = (index < 0 ? 0 : index + delta).clamp(
-      0,
-      selectable.length - 1,
-    );
+    final current = index < 0 ? 0 : index;
+    final next = (current + delta).clamp(0, selectable.length - 1);
     selectedIdentity = selectable[next].identity;
   }
 

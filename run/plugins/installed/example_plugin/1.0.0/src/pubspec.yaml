@@ -1,0 +1,14 @@
+name: example_plugin
+description: Reference AyuMC plugin showing commands, events, configuration and timers.
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  ayu_plugin_api:
+    path: ../../packages/ayu_plugin_api
+
+dev_dependencies:
+  lints: ^6.0.0

@@ -1,0 +1,10 @@
+{
+  "formatVersion": 1,
+  "plugins": [
+    {
+      "id": "session_events",
+      "version": "1.0.0",
+      "enabled": true
+    }
+  ]
+}

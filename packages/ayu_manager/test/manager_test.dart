@@ -13,9 +13,20 @@ void main() {
       ManagerKey.f6,
     );
     expect(decoder.add([0x00, 0x3c]).single.key, ManagerKey.f2);
+    expect(decoder.add([0x1b, 0x5b, 0x41]).single.key, ManagerKey.up);
+    expect(decoder.add([0x1b, 0x5b, 0x42]).single.key, ManagerKey.down);
+    expect(decoder.add([0x1b, 0x4f, 0x41]).single.key, ManagerKey.up);
+    expect(decoder.add([0xe0, 0x48]).single.key, ManagerKey.up);
     final split = KeyDecoder();
     expect(split.add([0x1b, 0x5b]), isEmpty);
     expect(split.add([0x31, 0x35, 0x7e]).single.key, ManagerKey.f5);
+    final arrows = KeyDecoder();
+    for (var i = 0; i < 20; i++) {
+      expect(arrows.add([0x1b, 0x5b, 0x42]).single.key, ManagerKey.down);
+    }
+    final followed = arrows.add([0x1b, 0x5b, 0x41, 0x72]);
+    expect(followed.first.key, ManagerKey.up);
+    expect(followed.last.text, 'r');
   });
 
   test('F1 through F6 change the visible section', () {
@@ -30,6 +41,14 @@ void main() {
     session.apply(const KeyEvent.text('6'));
     expect(session.section, ManagerSection.controls);
     expect(session.render(color: false), contains('restart'));
+  });
+
+  test('uptime text follows the moment the server started', () {
+    final control = ServerControl(root: Directory.systemTemp);
+    control.state = ServerRunState.running;
+    control.startedAt = DateTime.now().subtract(const Duration(seconds: 5));
+    final session = ManagerSession(control: control);
+    expect(session.render(color: false), contains('up 0:00:05'));
   });
 
   test('log history drops the oldest line and remembers that it did', () {

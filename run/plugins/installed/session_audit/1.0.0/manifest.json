@@ -1,0 +1,39 @@
+{
+  "formatVersion": 1,
+  "packageType": "plugin",
+  "id": "session_audit",
+  "name": "Session Audit",
+  "version": "1.0.0",
+  "description": "Logs one line when a play session starts and one line when it ends.",
+  "api": ">=1.0.0 <2.0.0",
+  "entryPoint": "src/bin/main.dart",
+  "artifacts": {
+    "windows-x64": {
+      "path": "bin/windows-x64/plugin.aot",
+      "sha256": "9215c0b24a28d34d87bc0188e0406a221495d469825e50145a64b89e62814c0d",
+      "size": 1158008,
+      "dartSdk": "3.13.4"
+    }
+  },
+  "capabilities": [
+    "events"
+  ],
+  "events": {
+    "requires": [
+      {
+        "id": "session.joined",
+        "version": "^1.0.0"
+      },
+      {
+        "id": "session.left",
+        "version": "^1.0.0"
+      }
+    ]
+  },
+  "build": {
+    "tool": "ayu",
+    "toolVersion": "0.1.0",
+    "dartSdk": "3.13.4",
+    "createdAt": "2026-10-10T18:30:45.246718Z"
+  }
+}

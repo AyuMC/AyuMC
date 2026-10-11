@@ -44,7 +44,7 @@ run/
 ```text
 Profile AyuMC-1.8.9-release (Minecraft 1.8.9, protocol 47).
 Listening for Minecraft 1.8.9 on 25565.
-Server started. No gameplay event packs are installed by default.
+Server started. No gameplay event packs are active.
 ```
 
 اگر به‌جای خط Listening پیام `Minecraft listener was not started` آمد، پورت ۲۵۵۶۵ اشغال است. سرور پلاگین را بالا آورده ولی بازی به آن وصل نمی‌شود. یا برنامهٔ اشغال‌کننده را ببند، یا پورت را عوض کن.

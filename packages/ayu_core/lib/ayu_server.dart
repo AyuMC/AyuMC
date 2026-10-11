@@ -65,7 +65,12 @@ class AyuServer {
     _registrySubscription = plugins.registry.changes.listen(_mirrorPluginCommand);
     await plugins.start();
     await _listen();
-    logger.info('Server started. No gameplay event packs are installed by default.');
+    final activePacks = plugins.eventPacks.where((pack) => pack.state == PluginState.active).map((pack) => pack.id).toList();
+    if (activePacks.isEmpty) {
+      logger.info('Server started. No gameplay event packs are active.');
+    } else {
+      logger.info('Server started. Active event packs: ${activePacks.join(', ')}.');
+    }
     events.emit(ServerStartedEvent());
     lifecycle.setState(ServerState.running);
   }

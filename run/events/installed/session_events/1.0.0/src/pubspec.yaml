@@ -1,0 +1,11 @@
+name: session_events
+description: Public session contracts for an AyuMC 1.8.9 play-state join and leave. Not part of the server core.
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  ayu_plugin_api:
+    path: ../../packages/ayu_plugin_api

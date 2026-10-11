@@ -226,6 +226,16 @@ void main() {
       expect(listed, contains('audit'));
       expect(listed, contains('Available — not installed.'));
       expect('AYUMC'.allMatches(listed), hasLength(1));
+      session.pluginScreen.detail = true;
+      session.apply(const KeyEvent.nav(ManagerKey.escape));
+      expect(session.section, ManagerSection.plugins);
+      expect(session.pluginScreen.detail, isFalse);
+      session.apply(const KeyEvent.nav(ManagerKey.escape));
+      expect(session.section, ManagerSection.plugins);
+      session.apply(const KeyEvent.nav(ManagerKey.down));
+      expect(session.pluginScreen.selectedIdentity, contains('audit.ayu'));
+      session.apply(const KeyEvent.nav(ManagerKey.up));
+      expect(session.pluginScreen.selectedIdentity, contains('alpha.ayu'));
 
       session.apply(const KeyEvent.text('/'));
       session.apply(const KeyEvent.text('a'));

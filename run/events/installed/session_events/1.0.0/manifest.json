@@ -1,0 +1,71 @@
+{
+  "formatVersion": 1,
+  "packageType": "event-pack",
+  "id": "session_events",
+  "name": "Session Events",
+  "version": "1.0.0",
+  "profiles": [
+    "AyuMC-1.8.9-release"
+  ],
+  "description": "Publishes session.joined when a client enters the play state, and session.left when that connection closes.",
+  "api": ">=1.0.0 <2.0.0",
+  "entryPoint": "src/bin/main.dart",
+  "artifacts": {
+    "windows-x64": {
+      "path": "bin/windows-x64/plugin.aot",
+      "sha256": "4748d3a08bb659a9dac2cc2b8b7112d3401a9c73391c7a97eb501867e38ae18e",
+      "size": 1159560,
+      "dartSdk": "3.13.4"
+    }
+  },
+  "capabilities": [
+    "observe",
+    "publish"
+  ],
+  "provides": [
+    {
+      "id": "session.joined",
+      "version": "1.0.0",
+      "delivery": {
+        "mode": "observational",
+        "batching": true,
+        "overflow": "gap",
+        "queueLimit": 4096
+      },
+      "sources": [
+        "core.session.play_joined"
+      ],
+      "schema": {
+        "entityId": "int",
+        "name": "string",
+        "uuid": "string"
+      },
+      "description": "Offline login succeeded and the connection is in the play state. This is not a position or a world join beyond the protocol transition."
+    },
+    {
+      "id": "session.left",
+      "version": "1.0.0",
+      "delivery": {
+        "mode": "observational",
+        "batching": true,
+        "overflow": "gap",
+        "queueLimit": 4096
+      },
+      "sources": [
+        "core.session.closed"
+      ],
+      "schema": {
+        "entityId": "int",
+        "name": "string",
+        "uuid": "string"
+      },
+      "description": "A play-state connection closed."
+    }
+  ],
+  "build": {
+    "tool": "ayu",
+    "toolVersion": "0.1.0",
+    "dartSdk": "3.13.4",
+    "createdAt": "2026-10-10T18:30:39.056495Z"
+  }
+}

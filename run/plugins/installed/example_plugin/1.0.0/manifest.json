@@ -1,0 +1,45 @@
+{
+  "formatVersion": 1,
+  "packageType": "plugin",
+  "id": "example_plugin",
+  "name": "Example Plugin",
+  "version": "1.0.0",
+  "description": "Reference plugin with a greeting command, event counters and a periodic tick.",
+  "authors": [
+    "AyuMC"
+  ],
+  "license": "MIT",
+  "api": ">=1.0.0 <2.0.0",
+  "entryPoint": "src/bin/main.dart",
+  "artifacts": {
+    "windows-x64": {
+      "path": "bin/windows-x64/plugin.aot",
+      "sha256": "e817069d7bce7b719b8375a96375589f7b31d3695ca501df1290dee0d795ee94",
+      "size": 1155944,
+      "dartSdk": "3.13.4"
+    }
+  },
+  "capabilities": [
+    "commands",
+    "config",
+    "events"
+  ],
+  "events": {
+    "optional": [
+      {
+        "id": "player.join",
+        "version": "^1.0.0"
+      },
+      {
+        "id": "server.started",
+        "version": "^1.0.0"
+      }
+    ]
+  },
+  "build": {
+    "tool": "ayu",
+    "toolVersion": "0.1.0",
+    "dartSdk": "3.13.4",
+    "createdAt": "2026-10-10T15:20:45.132599Z"
+  }
+}

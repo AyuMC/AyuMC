@@ -33,6 +33,9 @@ final class ManagerSession {
 
   ManagerSection section = ManagerSection.dashboard;
   bool followTail = true;
+
+  /// When log following is paused, the view stays on this many lines.
+  int? logPin;
   bool confirmQuit = false;
   final StringBuffer command = StringBuffer();
   final List<String> notices = [];
@@ -74,7 +77,7 @@ final class ManagerSession {
       section = destination;
       return null;
     }
-    if (event.key == ManagerKey.pause) followTail = !followTail;
+    if (event.key == ManagerKey.pause) toggleLogFollow();
     if (event.key == ManagerKey.backspace) backspace();
     if (event.key == ManagerKey.escape) section = ManagerSection.dashboard;
     if (event.text != null &&
@@ -108,6 +111,11 @@ final class ManagerSession {
       '6' => ManagerSection.controls,
       _ => null,
     };
+  }
+
+  void toggleLogFollow() {
+    followTail = !followTail;
+    logPin = followTail ? null : logs.lines.length;
   }
 
   void backspace() {
@@ -178,9 +186,11 @@ final class ManagerSession {
             '  ${paint('${logs.dropped} older lines left this view.', '33')}',
           );
         buffer.writeln();
-        final visible = logs.lines.skip(
-          logs.lines.length > 16 ? logs.lines.length - 16 : 0,
-        );
+        final end = !followTail && logPin != null
+            ? logPin!.clamp(0, logs.lines.length)
+            : logs.lines.length;
+        final start = end > 16 ? end - 16 : 0;
+        final visible = logs.lines.skip(start).take(end - start);
         if (visible.isEmpty)
           buffer.writeln(
             '  ${paint('No log lines yet. Start the server from 6 Power.', '2')}',

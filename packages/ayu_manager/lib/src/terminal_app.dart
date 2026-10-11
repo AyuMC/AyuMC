@@ -32,10 +32,11 @@ final class ManagerApp {
   StreamSubscription<List<int>>? _keysSubscription;
   StreamSubscription<PluginHostEvent>? _hostEvents;
   Timer? _paintTimer;
+  Timer? _clockTimer;
   bool _dirty = true;
 
   Future<int> run() async {
-    LogHub.listeners.add(session.logs.add);
+    LogHub.listeners.add(_onLog);
     final interactive = stdin.hasTerminal && stdout.hasTerminal;
     LogHub.echo = !interactive;
     unawaited(session.desk.refresh());
@@ -55,26 +56,47 @@ final class ManagerApp {
       return _lineMode();
     }
     stdout.write('\x1b[?1049h\x1b[?25l');
-    _keysSubscription = stdin.listen((bytes) {
-      for (final event in _keys.add(bytes)) {
-        _onKey(event);
-      }
-      _dirty = true;
-    });
+    _keysSubscription = stdin.listen(
+      (bytes) {
+        enableTerminalFeatures();
+        try {
+          for (final event in _keys.add(bytes)) {
+            _onKey(event);
+          }
+        } catch (error) {
+          session.notice('$error');
+        }
+        _dirty = true;
+      },
+      cancelOnError: false,
+    );
     _paintTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
       if (_dirty || session.desk.activity != null) _paint();
+    });
+    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (control.state == ServerRunState.running ||
+          control.state == ServerRunState.starting ||
+          control.state == ServerRunState.stopping) {
+        _dirty = true;
+      }
     });
     _paint();
     await _closed.future;
     _paintTimer?.cancel();
+    _clockTimer?.cancel();
     await _keysSubscription?.cancel();
     await _hostEvents?.cancel();
     stdout.write('\x1b[?25h\x1b[?1049l');
     stdin.echoMode = echo;
     stdin.lineMode = line;
     LogHub.echo = true;
-    LogHub.listeners.remove(session.logs.add);
+    LogHub.listeners.remove(_onLog);
     return 0;
+  }
+
+  void _onLog(LogRecord record) {
+    session.logs.add(record);
+    _dirty = true;
   }
 
   final Completer<void> _closed = Completer<void>();
@@ -103,7 +125,7 @@ final class ManagerApp {
       return;
     }
     if (text == 'p' && session.section == ManagerSection.logs) {
-      session.followTail = !session.followTail;
+      session.toggleLogFollow();
       return;
     }
     if (event.key == ManagerKey.backspace && screen == null) {
@@ -365,7 +387,7 @@ final class ManagerApp {
       await _submit(text);
       stdout.writeln(session.notices.isEmpty ? '' : session.notices.last);
     }
-    LogHub.listeners.remove(session.logs.add);
+    LogHub.listeners.remove(_onLog);
     LogHub.echo = true;
     return 0;
   }

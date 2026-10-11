@@ -165,7 +165,21 @@ final class WorkerController {
 
   /// Serves worker -> host requests. Capability checks happen here.
   Future<Object?> handleWorkerRequest(PluginInstance instance, String method, Object? params) async {
-    if (instance.state != PluginState.starting && instance.state != PluginState.active) {
+    final stopping = instance.state == PluginState.stopping;
+    final alive = instance.state == PluginState.starting || instance.state == PluginState.active;
+    // onDisable runs after the host has already dropped registrations, and it
+    // may still unsubscribe or unregister. Those cleanups are allowed.
+    // New subscriptions and commands are not.
+    const cleanup = {
+      IpcMethod.commandUnregister,
+      IpcMethod.eventUnsubscribe,
+      IpcMethod.observeUnsubscribe,
+    };
+    if (stopping) {
+      if (!cleanup.contains(method)) {
+        throw IpcException.code(IpcErrorCode.unavailable, 'package is stopping');
+      }
+    } else if (!alive) {
       throw IpcException.code(IpcErrorCode.unavailable, 'package is ${instance.state.name}');
     }
     switch (method) {

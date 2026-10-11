@@ -16,7 +16,8 @@ import 'package:pub_semver/pub_semver.dart';
 /// <root>/state.json                  installed versions and desired state
 /// ```
 final class PluginStoreLayout {
-  PluginStoreLayout(Directory root) : root = Directory(p.normalize(p.absolute(root.path)));
+  PluginStoreLayout(Directory root)
+    : root = Directory(p.normalize(p.absolute(root.path)));
 
   final Directory root;
 
@@ -26,28 +27,45 @@ final class PluginStoreLayout {
   File get stateFile => File(p.join(root.path, 'state.json'));
 
   Directory pluginDirectory(String id) => Directory(p.join(installed.path, id));
-  Directory installDirectory(String id, Version version) => Directory(p.join(installed.path, id, version.toString()));
+  Directory installDirectory(String id, Version version) =>
+      Directory(p.join(installed.path, id, version.toString()));
   Directory dataDirectory(String id) => Directory(p.join(data.path, id));
 }
 
 /// Persisted desired state of one installed plugin. `enabled` is what the
 /// user asked for; the live state lives on the instance.
 final class InstalledPluginRecord {
-  const InstalledPluginRecord({required this.id, required this.version, required this.enabled});
+  const InstalledPluginRecord({
+    required this.id,
+    required this.version,
+    required this.enabled,
+  });
 
   final String id;
   final Version version;
   final bool enabled;
 
   InstalledPluginRecord copyWith({Version? version, bool? enabled}) =>
-      InstalledPluginRecord(id: id, version: version ?? this.version, enabled: enabled ?? this.enabled);
+      InstalledPluginRecord(
+        id: id,
+        version: version ?? this.version,
+        enabled: enabled ?? this.enabled,
+      );
 
-  Map<String, Object?> toJson() => {'id': id, 'version': version.toString(), 'enabled': enabled};
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'version': version.toString(),
+    'enabled': enabled,
+  };
 }
 
 /// An installed plugin found on disk together with its manifest.
 final class StoredPlugin {
-  const StoredPlugin({required this.record, required this.manifest, required this.installDirectory});
+  const StoredPlugin({
+    required this.record,
+    required this.manifest,
+    required this.installDirectory,
+  });
 
   final InstalledPluginRecord record;
   final PluginManifest manifest;
@@ -57,7 +75,9 @@ final class StoredPlugin {
 /// Filesystem side of the host: staging, atomic commit of extracted
 /// packages and the persisted state file.
 final class PluginStore {
-  PluginStore(Directory root, {required Logger log}) : layout = PluginStoreLayout(root), _log = log;
+  PluginStore(Directory root, {required Logger log})
+    : layout = PluginStoreLayout(root),
+      _log = log;
 
   static const _stateFormatVersion = 1;
 
@@ -71,7 +91,12 @@ final class PluginStore {
   /// Creates the layout, discards leftovers of interrupted installations
   /// and loads the state file.
   Future<void> open() async {
-    for (final dir in [layout.root, layout.installed, layout.staging, layout.data]) {
+    for (final dir in [
+      layout.root,
+      layout.installed,
+      layout.staging,
+      layout.data,
+    ]) {
       await dir.create(recursive: true);
     }
     await for (final leftover in layout.staging.list()) {
@@ -82,27 +107,74 @@ final class PluginStore {
   }
 
   Future<Directory> createStagingDirectory() async {
-    final token = '${DateTime.now().toUtc().millisecondsSinceEpoch.toRadixString(36)}-${_random.nextInt(1 << 32).toRadixString(36)}';
+    final token =
+        '${DateTime.now().toUtc().millisecondsSinceEpoch.toRadixString(36)}-${_random.nextInt(1 << 32).toRadixString(36)}';
     final dir = Directory(p.join(layout.staging.path, token));
     await dir.create();
     return dir;
   }
 
-  /// Moves a fully extracted staging directory into its final location with
-  /// a single rename. Fails if the destination exists.
-  Future<Directory> commit({required Directory staged, required String id, required Version version}) async {
+  /// Moves a fully extracted staging directory into its final location.
+  /// Fails if the destination exists.
+  ///
+  /// Windows often refuses the first rename while a scanner still has a
+  /// handle on a file that was just written. Retry, then copy if needed.
+  Future<Directory> commit({
+    required Directory staged,
+    required String id,
+    required Version version,
+  }) async {
     final destination = layout.installDirectory(id, version);
     if (await destination.exists()) {
       await _deleteQuietly(staged);
-      throw PackageException(PackageErrorCode.destinationNotEmpty,
-          'version $version of "$id" is already installed at ${destination.path}');
+      throw PackageException(
+        PackageErrorCode.destinationNotEmpty,
+        'version $version of "$id" is already installed at ${destination.path}',
+      );
     }
     await destination.parent.create(recursive: true);
-    try {
-      return await staged.rename(destination.path);
-    } on FileSystemException catch (e) {
-      await _deleteQuietly(staged);
-      throw PackageException(PackageErrorCode.ioError, 'cannot move staged package into place: ${e.message}');
+    FileSystemException? lastFailure;
+    for (var attempt = 0; attempt < 6; attempt++) {
+      try {
+        return await staged.rename(destination.path);
+      } on FileSystemException catch (error) {
+        lastFailure = error;
+        if (!await staged.exists()) break;
+        await Future<void>.delayed(Duration(milliseconds: 40 * (attempt + 1)));
+      }
+    }
+    if (await staged.exists()) {
+      try {
+        await _copyTree(staged, destination);
+        await _deleteQuietly(staged);
+        return destination;
+      } on FileSystemException catch (error) {
+        lastFailure = error;
+        await _deleteQuietly(destination);
+      }
+    }
+    await _deleteQuietly(staged);
+    final os = lastFailure?.osError;
+    final detail = os == null
+        ? (lastFailure?.message ?? 'unknown error')
+        : '${lastFailure!.message} (os ${os.errorCode} ${os.message})';
+    throw PackageException(
+      PackageErrorCode.ioError,
+      'cannot move staged package into place: $detail',
+    );
+  }
+
+  Future<void> _copyTree(Directory from, Directory to) async {
+    await to.create(recursive: true);
+    await for (final entity in from.list(recursive: true, followLinks: false)) {
+      final relative = p.relative(entity.path, from: from.path);
+      final target = p.join(to.path, relative);
+      if (entity is Directory) {
+        await Directory(target).create(recursive: true);
+      } else if (entity is File) {
+        await Directory(p.dirname(target)).create(recursive: true);
+        await entity.copy(target);
+      }
     }
   }
 
@@ -129,21 +201,36 @@ final class PluginStore {
 
   /// Reads every recorded plugin's manifest from disk. Records whose files
   /// are missing or unreadable are dropped from the state with a warning.
-  Future<List<StoredPlugin>> loadInstalled({PackageLimits limits = const PackageLimits()}) async {
+  Future<List<StoredPlugin>> loadInstalled({
+    PackageLimits limits = const PackageLimits(),
+  }) async {
     final result = <StoredPlugin>[];
     var dirty = false;
     for (final record in List.of(_records.values)) {
       final dir = layout.installDirectory(record.id, record.version);
       final manifestFile = File(p.join(dir.path, PackageSpec.manifestFileName));
       try {
-        final manifest = PluginManifest.parse(await manifestFile.readAsString(), limits: limits);
+        final manifest = PluginManifest.parse(
+          await manifestFile.readAsString(),
+          limits: limits,
+        );
         if (manifest.id != record.id || manifest.version != record.version) {
-          throw PackageException(PackageErrorCode.manifestInvalid,
-              'manifest identifies ${manifest.id} ${manifest.version}, state expects ${record.id} ${record.version}');
+          throw PackageException(
+            PackageErrorCode.manifestInvalid,
+            'manifest identifies ${manifest.id} ${manifest.version}, state expects ${record.id} ${record.version}',
+          );
         }
-        result.add(StoredPlugin(record: record, manifest: manifest, installDirectory: dir));
+        result.add(
+          StoredPlugin(
+            record: record,
+            manifest: manifest,
+            installDirectory: dir,
+          ),
+        );
       } on FileSystemException catch (e) {
-        _log.error('dropping "${record.id}" from state: cannot read ${manifestFile.path} (${e.message})');
+        _log.error(
+          'dropping "${record.id}" from state: cannot read ${manifestFile.path} (${e.message})',
+        );
         _records.remove(record.id);
         dirty = true;
       } on PackageException catch (e) {
@@ -165,20 +252,28 @@ final class PluginStore {
         throw const FormatException('unknown state format');
       }
       final plugins = decoded['plugins'];
-      if (plugins is! List) throw const FormatException('plugins must be a list');
+      if (plugins is! List)
+        throw const FormatException('plugins must be a list');
       for (final item in plugins) {
-        if (item is! Map) throw const FormatException('plugin entry must be an object');
+        if (item is! Map)
+          throw const FormatException('plugin entry must be an object');
         final id = item['id'];
         final version = item['version'];
         final enabled = item['enabled'];
         if (id is! String || version is! String || enabled is! bool) {
           throw const FormatException('plugin entry has wrong field types');
         }
-        _records[id] = InstalledPluginRecord(id: id, version: Version.parse(version), enabled: enabled);
+        _records[id] = InstalledPluginRecord(
+          id: id,
+          version: Version.parse(version),
+          enabled: enabled,
+        );
       }
     } on FormatException catch (e) {
       final backup = File('${file.path}.corrupt');
-      _log.error('state file is unreadable (${e.message}); moving it to ${backup.path} and starting empty');
+      _log.error(
+        'state file is unreadable (${e.message}); moving it to ${backup.path} and starting empty',
+      );
       await file.rename(backup.path);
       _records.clear();
     }

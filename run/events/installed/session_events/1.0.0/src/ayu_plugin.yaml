@@ -1,0 +1,30 @@
+id: session_events
+name: Session Events
+description: Publishes session.joined when a client enters the play state, and session.left when that connection closes.
+packageType: event-pack
+api: ">=1.0.0 <2.0.0"
+entry: bin/main.dart
+profiles:
+  - AyuMC-1.8.9-release
+capabilities:
+  - observe
+  - publish
+provides:
+  - id: session.joined
+    version: 1.0.0
+    description: Offline login succeeded and the connection is in the play state. This is not a position or a world join beyond the protocol transition.
+    sources:
+      - core.session.play_joined
+    schema:
+      entityId: int
+      name: string
+      uuid: string
+  - id: session.left
+    version: 1.0.0
+    description: A play-state connection closed.
+    sources:
+      - core.session.closed
+    schema:
+      entityId: int
+      name: string
+      uuid: string
