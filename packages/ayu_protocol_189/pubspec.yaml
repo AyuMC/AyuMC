@@ -1,5 +1,5 @@
 name: ayu_protocol_189
-description: Minecraft Java Edition 1.8.9 (protocol 47) framing, handshake, status and login-start handling for AyuMC.
+description: Minecraft Java Edition 1.8.9 (protocol 47) framing, login, and player entity replication for AyuMC.
 version: 0.1.0
 publish_to: none
 

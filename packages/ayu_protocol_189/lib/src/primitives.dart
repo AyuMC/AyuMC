@@ -17,7 +17,8 @@ abstract final class ProtocolPrimitive {
   static const closed = 'core.session.closed';
 
   /// The server accepted a new position from a play-state client.
-  /// High frequency. Observers should coalesce.
+  /// High frequency. A newer value for the same entity replaces one that is
+  /// still queued for a worker. Join and leave primitives are not coalesced.
   static const position = 'core.player.position';
 
   static const protocolVersion = 47;

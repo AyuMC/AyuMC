@@ -1,10 +1,8 @@
-/// Minecraft Java Edition 1.8.9 network foundation: packet framing, the
-/// handshake, status ping and the login-start packet.
+/// Minecraft Java Edition 1.8.9 (protocol 47) connections.
 ///
-/// This is not a playable server. After a login start the connection is
-/// closed with a disconnect packet. What it does provide is a tested place
-/// where the core reports internal primitives (`core.session.handshake`,
-/// `core.session.login`) without defining any public gameplay event.
+/// Offline login enters the play state on one stone pad. Accepted
+/// [PlaySession] coordinates are replicated to other sessions. Public
+/// gameplay contracts are not defined here.
 library;
 
 export 'src/buffer.dart';
@@ -13,3 +11,4 @@ export 'src/flat_chunk.dart';
 export 'src/offline_uuid.dart';
 export 'src/play_session.dart';
 export 'src/primitives.dart';
+export 'src/visibility.dart';

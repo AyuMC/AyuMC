@@ -171,6 +171,24 @@ final class EventDispatcher {
   }
 }
 
+/// How one internal primitive is queued for a worker.
+///
+/// `core.player.position` keeps the newest pending update per entity. Session
+/// join, leave, and every other primitive keep each occurrence.
+DeliverySpec primitiveDeliverySpec(
+  String primitiveId, {
+  required int queueLimit,
+}) {
+  if (primitiveId == 'core.player.position') {
+    return DeliverySpec(
+      overflow: OverflowPolicy.coalesce,
+      coalesceKey: 'entityId',
+      queueLimit: queueLimit,
+    );
+  }
+  return DeliverySpec(queueLimit: queueLimit);
+}
+
 /// The core's only way to reach event packs: observational primitives are
 /// forwarded demand-driven and batched; decision primitives are put to the
 /// packs that registered a decision handler, each within a budget.
@@ -182,15 +200,13 @@ final class PrimitiveBus {
     required Logger log,
     required PluginInstance? Function(String id) lookup,
   }) : _log = log,
-       _lookup = lookup,
-       _primitiveSpec = DeliverySpec(queueLimit: options.primitiveQueueLimit);
+       _lookup = lookup;
 
   final ContractRegistry registry;
   final EventDispatcher dispatcher;
   final PluginRuntimeOptions options;
   final Logger _log;
   final PluginInstance? Function(String id) _lookup;
-  final DeliverySpec _primitiveSpec;
   final Map<String, WorkerOutbox> _outboxes = {};
 
   int forwarded = 0;
@@ -246,7 +262,14 @@ final class PrimitiveBus {
         data: data,
         timestampMillis: DateTime.now().millisecondsSinceEpoch,
       ).toJson();
-      outbox.enqueue(primitiveId, _primitiveSpec, envelope);
+      outbox.enqueue(
+        primitiveId,
+        primitiveDeliverySpec(
+          primitiveId,
+          queueLimit: options.primitiveQueueLimit,
+        ),
+        envelope,
+      );
       forwarded++;
     }
   }

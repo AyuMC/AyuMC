@@ -29,7 +29,9 @@ final class PacketBuffer {
       return null;
     }
     if (length < 0 || length > maxFrameBytes) {
-      throw PacketFormatException('packet length $length exceeds $maxFrameBytes');
+      throw PacketFormatException(
+        'packet length $length exceeds $maxFrameBytes',
+      );
     }
     if (length > _end - _start) {
       _start = saved;
@@ -51,7 +53,8 @@ final class PacketBuffer {
   }
 
   int readUnsignedShort() {
-    if (_end - _start < 2) throw const PacketFormatException('truncated unsigned short');
+    if (_end - _start < 2)
+      throw const PacketFormatException('truncated unsigned short');
     final value = (_bytes[_start] << 8) | _bytes[_start + 1];
     _start += 2;
     return value;
@@ -62,7 +65,8 @@ final class PacketBuffer {
     if (length < 0 || length > maxBytes) {
       throw PacketFormatException('string length $length exceeds $maxBytes');
     }
-    if (_end - _start < length) throw const PacketFormatException('truncated string');
+    if (_end - _start < length)
+      throw const PacketFormatException('truncated string');
     final bytes = _bytes.sublist(_start, _start + length);
     _start += length;
     try {
@@ -83,24 +87,63 @@ final class PacketBuffer {
   }
 
   double readDouble() {
-    if (_end - _start < 8) throw const PacketFormatException('truncated double');
-    final value = ByteData.sublistView(_bytes, _start, _start + 8).getFloat64(0, Endian.big);
+    if (_end - _start < 8)
+      throw const PacketFormatException('truncated double');
+    final value = ByteData.sublistView(
+      _bytes,
+      _start,
+      _start + 8,
+    ).getFloat64(0, Endian.big);
     _start += 8;
     return value;
   }
 
   double readFloat() {
     if (_end - _start < 4) throw const PacketFormatException('truncated float');
-    final value = ByteData.sublistView(_bytes, _start, _start + 4).getFloat32(0, Endian.big);
+    final value = ByteData.sublistView(
+      _bytes,
+      _start,
+      _start + 4,
+    ).getFloat32(0, Endian.big);
     _start += 4;
     return value;
   }
 
   bool readBool() {
-    if (_end - _start < 1) throw const PacketFormatException('truncated boolean');
+    if (_end - _start < 1)
+      throw const PacketFormatException('truncated boolean');
     final value = _bytes[_start] != 0;
     _start += 1;
     return value;
+  }
+
+  int readUnsignedByte() {
+    if (_end - _start < 1) throw const PacketFormatException('truncated byte');
+    return _bytes[_start++];
+  }
+
+  int readInt() {
+    if (_end - _start < 4) throw const PacketFormatException('truncated int');
+    final value = ByteData.sublistView(_bytes, _start, _start + 4).getInt32(0);
+    _start += 4;
+    return value;
+  }
+
+  int readShort() {
+    if (_end - _start < 2) throw const PacketFormatException('truncated short');
+    final value = (_bytes[_start] << 8) | _bytes[_start + 1];
+    _start += 2;
+    return value >= 0x8000 ? value - 0x10000 : value;
+  }
+
+  Uint8List readBytes(int count) {
+    if (count < 0 || _end - _start < count) {
+      throw const PacketFormatException('truncated bytes');
+    }
+    final bytes = Uint8List(count);
+    bytes.setRange(0, count, _bytes, _start);
+    _start += count;
+    return bytes;
   }
 
   void _ensure(int needed) {
@@ -169,7 +212,8 @@ Uint8List encodeString(String value) {
   return Uint8List.fromList([...encodeVarInt(bytes.length), ...bytes]);
 }
 
-Uint8List encodeUnsignedShort(int value) => Uint8List.fromList([(value >> 8) & 0xFF, value & 0xFF]);
+Uint8List encodeUnsignedShort(int value) =>
+    Uint8List.fromList([(value >> 8) & 0xFF, value & 0xFF]);
 
 Uint8List encodeInt(int value) {
   final bytes = Uint8List(4);

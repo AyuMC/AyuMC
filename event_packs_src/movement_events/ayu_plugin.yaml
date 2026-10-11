@@ -12,7 +12,7 @@ capabilities:
 provides:
   - id: player.position_changed
     version: 1.0.0
-    description: The server accepted a position from a play-state client. Delivery keeps the newest position per entityId when the queue overflows. It does not promise every intermediate packet.
+    description: The server accepted a position from a play-state client. A newer position for the same entity replaces one still waiting to be delivered. The event does not promise every intermediate packet.
     sources:
       - core.player.position
     delivery:
