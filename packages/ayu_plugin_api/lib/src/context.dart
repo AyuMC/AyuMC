@@ -2,13 +2,15 @@ import 'dart:async';
 
 import 'package:ayu_ipc/ayu_ipc.dart';
 
-typedef CommandHandler = FutureOr<CommandResult> Function(CommandInvocation call);
+typedef CommandHandler =
+    FutureOr<CommandResult> Function(CommandInvocation call);
 typedef EventHandler = FutureOr<void> Function(EventEnvelope event);
 typedef DecisionHandler = FutureOr<Decision> Function(DecisionRequest request);
 typedef AvailabilityHandler = void Function(ContractAvailability change);
 typedef GapHandler = void Function(DeliveryGap gap);
 typedef PrimitiveHandler = FutureOr<void> Function(PrimitiveEnvelope primitive);
-typedef PrimitiveDecisionHandler = FutureOr<PrimitiveDecision> Function(DecisionRequest request);
+typedef PrimitiveDecisionHandler =
+    FutureOr<PrimitiveDecision> Function(DecisionRequest request);
 
 /// Verdict of a plugin on a decision contract.
 final class Decision {
@@ -21,7 +23,8 @@ final class Decision {
   final String verdict;
   final String? reason;
 
-  DecisionResponse toResponse() => DecisionResponse.verdict(verdict, reason: reason);
+  DecisionResponse toResponse() =>
+      DecisionResponse.verdict(verdict, reason: reason);
 }
 
 /// Answer of an event pack to a decision primitive: translate it into a
@@ -31,13 +34,15 @@ final class PrimitiveDecision {
 
   /// Put [data] to the consumers of [contract]; their verdicts decide.
   PrimitiveDecision.translate(String contract, Map<String, Object?> data)
-      : this._(DecisionResponse.translate(contract, data));
+    : this._(DecisionResponse.translate(contract, data));
 
   /// Let the operation proceed without consulting consumers.
-  const PrimitiveDecision.allow() : this._(const DecisionResponse.verdict(Verdict.allow));
+  const PrimitiveDecision.allow()
+    : this._(const DecisionResponse.verdict(Verdict.allow));
 
   /// Veto the operation without consulting consumers.
-  PrimitiveDecision.deny([String? reason]) : this._(DecisionResponse.verdict(Verdict.deny, reason: reason));
+  PrimitiveDecision.deny([String? reason])
+    : this._(DecisionResponse.verdict(Verdict.deny, reason: reason));
 
   final DecisionResponse _response;
 
@@ -61,9 +66,9 @@ final class PluginContext {
     required Set<String> capabilities,
     required Map<String, Object?> config,
     required HostLink link,
-  })  : capabilities = Set.unmodifiable(capabilities),
-        _config = Map.unmodifiable(config),
-        _link = link {
+  }) : capabilities = Set.unmodifiable(capabilities),
+       _config = Map.unmodifiable(config),
+       _link = link {
     log = PluginLogger._(this);
     commands = PluginCommands._(this);
     events = PluginEvents._(this);
@@ -104,7 +109,12 @@ final class PluginContext {
 
   /// Tells the manager that a configuration file was applied or rejected.
   /// This does not restart the worker.
-  void reportConfigStatus({required String state, required int revision, String? error, int? schemaVersion}) {
+  void reportConfigStatus({
+    required String state,
+    required int revision,
+    String? error,
+    int? schemaVersion,
+  }) {
     _link.notify(IpcMethod.configStatus, {
       'state': state,
       'revision': revision,
@@ -123,8 +133,10 @@ final class PluginContext {
 
   void _requireCapability(String capability) {
     if (!capabilities.contains(capability)) {
-      throw IpcException.code(IpcErrorCode.capabilityDenied,
-          'manifest does not declare the "$capability" capability');
+      throw IpcException.code(
+        IpcErrorCode.capabilityDenied,
+        'manifest does not declare the "$capability" capability',
+      );
     }
   }
 }
@@ -149,7 +161,11 @@ final class PluginLogger {
   void _log(String level, String message) {
     _context._link.notify(
       IpcMethod.log,
-      LogNotification(level: level, message: message, timestampMillis: DateTime.now().millisecondsSinceEpoch).toJson(),
+      LogNotification(
+        level: level,
+        message: message,
+        timestampMillis: DateTime.now().millisecondsSinceEpoch,
+      ).toJson(),
     );
   }
 }
@@ -182,9 +198,17 @@ final class PluginCommands {
   }) async {
     _context._requireCapability(PluginCapability.commands);
     if (_handlers.containsKey(name)) {
-      throw IpcException.code(IpcErrorCode.conflict, 'command "$name" is already registered by this plugin');
+      throw IpcException.code(
+        IpcErrorCode.conflict,
+        'command "$name" is already registered by this plugin',
+      );
     }
-    final spec = CommandSpec(name: name, description: description, usage: usage, aliases: aliases);
+    final spec = CommandSpec(
+      name: name,
+      description: description,
+      usage: usage,
+      aliases: aliases,
+    );
     _handlers[name] = handler;
     try {
       await _context._link.request(IpcMethod.commandRegister, spec.toJson());
@@ -198,14 +222,20 @@ final class PluginCommands {
   Future<void> unregister(String name) async {
     if (_handlers.remove(name) == null) return;
     if (!_context._link.isConnected) return;
-    await _context._link.request(IpcMethod.commandUnregister, CommandNameSpec(name).toJson());
+    await _context._link.request(
+      IpcMethod.commandUnregister,
+      CommandNameSpec(name).toJson(),
+    );
   }
 
   /// Runtime-internal dispatch of a host invocation.
   Future<CommandResult> dispatch(CommandInvocation call) async {
     final handler = _handlers[call.name];
     if (handler == null) {
-      throw IpcException.code(IpcErrorCode.notFound, 'command "${call.name}" is not handled by this plugin');
+      throw IpcException.code(
+        IpcErrorCode.notFound,
+        'command "${call.name}" is not handled by this plugin',
+      );
     }
     return handler(call);
   }
@@ -248,7 +278,8 @@ final class PluginEvents {
       _subscribe(type, decider: handler);
 
   /// Notified when an optional contract becomes available or disappears.
-  void onAvailabilityChanged(AvailabilityHandler handler) => _availabilityHandlers.add(handler);
+  void onAvailabilityChanged(AvailabilityHandler handler) =>
+      _availabilityHandlers.add(handler);
 
   /// Notified when the host had to drop events for this consumer.
   void onDeliveryGap(GapHandler handler) => _gapHandlers.add(handler);
@@ -257,7 +288,13 @@ final class PluginEvents {
   /// event-loop turn travel in a single frame.
   void publish(String contract, Map<String, Object?> data) {
     _context._requireCapability(PluginCapability.publish);
-    _publishQueue.add(PublishedEvent(contract: contract, data: data, timestampMillis: DateTime.now().millisecondsSinceEpoch));
+    _publishQueue.add(
+      PublishedEvent(
+        contract: contract,
+        data: data,
+        timestampMillis: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
     if (_flushScheduled) return;
     _flushScheduled = true;
     scheduleMicrotask(_flushPublishQueue);
@@ -270,11 +307,21 @@ final class PluginEvents {
     _publishQueue.clear();
     final sent = items.length == 1
         ? _context._link.notify(IpcMethod.eventPublish, items.single.toJson())
-        : _context._link.notify(IpcMethod.eventPublishBatch, PublishedEventBatch(items).toJson());
-    if (!sent) _context.log.warn('${items.length} published event(s) dropped: channel congested or closed');
+        : _context._link.notify(
+            IpcMethod.eventPublishBatch,
+            PublishedEventBatch(items).toJson(),
+          );
+    if (!sent)
+      _context.log.warn(
+        '${items.length} published event(s) dropped: channel congested or closed',
+      );
   }
 
-  Future<EventSubscription> _subscribe(String type, {EventHandler? handler, DecisionHandler? decider}) async {
+  Future<EventSubscription> _subscribe(
+    String type, {
+    EventHandler? handler,
+    DecisionHandler? decider,
+  }) async {
     _context._requireCapability(PluginCapability.events);
     final list = _subscriptions.putIfAbsent(type, () => []);
     final subscription = EventSubscription._(this, type, handler, decider);
@@ -282,7 +329,10 @@ final class PluginEvents {
     list.add(subscription);
     if (first) {
       try {
-        await _context._link.request(IpcMethod.eventSubscribe, EventSubscriptionSpec(type).toJson());
+        await _context._link.request(
+          IpcMethod.eventSubscribe,
+          EventSubscriptionSpec(type).toJson(),
+        );
       } catch (_) {
         list.remove(subscription);
         if (list.isEmpty) _subscriptions.remove(type);
@@ -298,7 +348,10 @@ final class PluginEvents {
     if (list.isNotEmpty) return;
     _subscriptions.remove(subscription.type);
     if (!_context._link.isConnected) return;
-    await _context._link.request(IpcMethod.eventUnsubscribe, EventSubscriptionSpec(subscription.type).toJson());
+    await _context._link.request(
+      IpcMethod.eventUnsubscribe,
+      EventSubscriptionSpec(subscription.type).toJson(),
+    );
   }
 
   /// Runtime-internal delivery. Handler failures are logged, never fatal.
@@ -311,7 +364,11 @@ final class PluginEvents {
       try {
         await handler(event);
       } catch (error, stackTrace) {
-        _context.log.error('event handler for "${event.type}" failed', error, stackTrace);
+        _context.log.error(
+          'event handler for "${event.type}" failed',
+          error,
+          stackTrace,
+        );
       }
     }
   }
@@ -328,7 +385,11 @@ final class PluginEvents {
         final decision = await decider(request);
         if (decision.verdict == Verdict.deny) return decision;
       } catch (error, stackTrace) {
-        _context.log.error('decision handler for "${request.id}" failed', error, stackTrace);
+        _context.log.error(
+          'decision handler for "${request.id}" failed',
+          error,
+          stackTrace,
+        );
         return Decision.deny('handler failed: $error');
       }
     }
@@ -371,11 +432,15 @@ final class PrimitiveObservations {
   PrimitiveObservations._(this._context);
 
   final PluginContext _context;
-  final Map<String, List<(PrimitiveSubscription, PrimitiveHandler)>> _observers = {};
+  final Map<String, List<(PrimitiveSubscription, PrimitiveHandler)>>
+  _observers = {};
   final Map<String, PrimitiveDecisionHandler> _deciders = {};
 
   /// Observes an observational primitive.
-  Future<PrimitiveSubscription> observe(String id, PrimitiveHandler handler) async {
+  Future<PrimitiveSubscription> observe(
+    String id,
+    PrimitiveHandler handler,
+  ) async {
     _context._requireCapability(PluginCapability.observe);
     final list = _observers.putIfAbsent(id, () => []);
     final subscription = PrimitiveSubscription._(this, id);
@@ -383,7 +448,10 @@ final class PrimitiveObservations {
     list.add((subscription, handler));
     if (first) {
       try {
-        await _context._link.request(IpcMethod.observeSubscribe, PrimitiveSubscriptionSpec(id).toJson());
+        await _context._link.request(
+          IpcMethod.observeSubscribe,
+          PrimitiveSubscriptionSpec(id).toJson(),
+        );
       } catch (_) {
         list.removeWhere((e) => identical(e.$1, subscription));
         if (list.isEmpty) _observers.remove(id);
@@ -398,13 +466,19 @@ final class PrimitiveObservations {
   Future<void> decide(String id, PrimitiveDecisionHandler handler) async {
     _context._requireCapability(PluginCapability.observe);
     if (_deciders.containsKey(id)) {
-      throw IpcException.code(IpcErrorCode.conflict, 'a decision handler for "$id" is already registered');
+      throw IpcException.code(
+        IpcErrorCode.conflict,
+        'a decision handler for "$id" is already registered',
+      );
     }
     final first = !_observers.containsKey(id);
     _deciders[id] = handler;
     if (first) {
       try {
-        await _context._link.request(IpcMethod.observeSubscribe, PrimitiveSubscriptionSpec(id).toJson());
+        await _context._link.request(
+          IpcMethod.observeSubscribe,
+          PrimitiveSubscriptionSpec(id).toJson(),
+        );
       } catch (_) {
         _deciders.remove(id);
         rethrow;
@@ -418,8 +492,12 @@ final class PrimitiveObservations {
     list.removeWhere((e) => identical(e.$1, subscription));
     if (list.isNotEmpty) return;
     _observers.remove(subscription.id);
-    if (_deciders.containsKey(subscription.id) || !_context._link.isConnected) return;
-    await _context._link.request(IpcMethod.observeUnsubscribe, PrimitiveSubscriptionSpec(subscription.id).toJson());
+    if (_deciders.containsKey(subscription.id) || !_context._link.isConnected)
+      return;
+    await _context._link.request(
+      IpcMethod.observeUnsubscribe,
+      PrimitiveSubscriptionSpec(subscription.id).toJson(),
+    );
   }
 
   /// Runtime-internal delivery.
@@ -430,7 +508,11 @@ final class PrimitiveObservations {
       try {
         await handler(primitive);
       } catch (error, stackTrace) {
-        _context.log.error('primitive handler for "${primitive.id}" failed', error, stackTrace);
+        _context.log.error(
+          'primitive handler for "${primitive.id}" failed',
+          error,
+          stackTrace,
+        );
       }
     }
   }

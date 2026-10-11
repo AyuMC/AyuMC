@@ -34,7 +34,21 @@ final class ConnectionListener extends Listener {
 
 `on` نوع payload را با قرارداد یکی می‌کند. اگر تابع را برای قرارداد دیگر بنویسید، تحلیل‌گر خطا می‌دهد. نام قرارداد برای مسیریابی همان `session.joined` است.
 
-نمونهٔ شنونده را در یک فیلد نگه دارید. اگر getter هر بار شیء تازه بسازد، ثبت‌ها تکراری می‌شوند.
+نمونهٔ شنونده را در یک فیلد سازنده نگه دارید. getter فقط همان نمونه را برمی‌گرداند. رانر یک بار `listeners` را می‌خواند.
+
+هر رویداد یک snapshot می‌گیرد و هم کلید روشن بودن و هم متن را از همان نسخه می‌خواند:
+
+```dart
+void _join(SessionJoined event) {
+  final snapshot = config.snapshot;
+  if (!snapshot.read(config.logJoins)) return;
+  final message = snapshot.render(
+    config.joinMessage,
+    PlaceholderContext(playerName: event.player.name),
+  );
+  context.log.info('[SessionAudit] $message');
+}
+```
 
 رانر موقع روشن شدن این handlerها را subscribe می‌کند و موقع خاموش شدن خودش آن‌ها را لغو می‌کند. لازم نیست برای هر کدام `EventSubscription` نگه دارید.
 

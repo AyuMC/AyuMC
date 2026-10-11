@@ -21,6 +21,33 @@ final class _ControllerSink implements FrameSink {
   Future<void> close() => controller.close();
 }
 
+final class _PingListener extends Listener {
+  int hits = 0;
+
+  @override
+  List<BoundHandler> get handlers => [
+    on(
+      EventContract<String>(
+        id: 'demo.ping',
+        version: '1.0.0',
+        decode: (data) => '${data['n']}',
+      ),
+      (String _) => hits++,
+    ),
+  ];
+}
+
+final class _ListedPlugin extends AyuPlugin {
+  final listener = _PingListener();
+  int listenerReads = 0;
+
+  @override
+  List<Listener> get listeners {
+    listenerReads++;
+    return [listener];
+  }
+}
+
 final class _Probe extends AyuPlugin {
   final List<String> calls = [];
   final List<EventEnvelope> events = [];
@@ -31,9 +58,16 @@ final class _Probe extends AyuPlugin {
   Future<void> onEnable() async {
     calls.add('enable');
     if (failEnable) throw StateError('cannot enable');
-    await context.commands.register('hello', (call) async {
-      return CommandResult.ok('Hello ${call.args.isEmpty ? call.sender : call.args.first} (${context.config['greeting']})');
-    }, description: 'Greets', aliases: ['hi']);
+    await context.commands.register(
+      'hello',
+      (call) async {
+        return CommandResult.ok(
+          'Hello ${call.args.isEmpty ? call.sender : call.args.first} (${context.config['greeting']})',
+        );
+      },
+      description: 'Greets',
+      aliases: ['hi'],
+    );
     await context.events.subscribe('player.join', (event) {
       events.add(event);
     });
@@ -54,11 +88,17 @@ final class _FakeHost {
   _FakeHost() {
     final hostToPlugin = StreamController<List<int>>();
     final pluginToHost = StreamController<List<int>>();
-    channel = FrameChannel(input: pluginToHost.stream, output: _ControllerSink(hostToPlugin), debugName: 'host')
-      ..onRequest = _onRequest
-      ..onNotification = (method, params) {
-        if (method == IpcMethod.log) logs.add(LogNotification.fromJson(params));
-      };
+    channel =
+        FrameChannel(
+            input: pluginToHost.stream,
+            output: _ControllerSink(hostToPlugin),
+            debugName: 'host',
+          )
+          ..onRequest = _onRequest
+          ..onNotification = (method, params) {
+            if (method == IpcMethod.log)
+              logs.add(LogNotification.fromJson(params));
+          };
     pluginOptions = PluginRunnerOptions(
       input: hostToPlugin.stream,
       output: IOSink(pluginToHost.sink),
@@ -74,6 +114,7 @@ final class _FakeHost {
   final List<CommandSpec> registered = [];
   final List<String> unregistered = [];
   final List<String> subscribed = [];
+  final List<String> unsubscribed = [];
   final List<LogNotification> logs = [];
 
   Future<Object?> _onRequest(String method, Object? params) async {
@@ -96,6 +137,9 @@ final class _FakeHost {
       case IpcMethod.eventSubscribe:
         subscribed.add(EventSubscriptionSpec.fromJson(params).type);
         return null;
+      case IpcMethod.eventUnsubscribe:
+        unsubscribed.add(EventSubscriptionSpec.fromJson(params).type);
+        return null;
       case IpcMethod.configGet:
         return {'greeting': 'reloaded'};
       default:
@@ -103,19 +147,27 @@ final class _FakeHost {
     }
   }
 
-  Future<Object?> init({List<String> capabilities = const ['commands', 'events', 'config']}) => channel.request(
-        IpcMethod.init,
-        InitRequest(
-          plugin: const PluginDescriptor(id: 'probe', name: 'Probe', version: '1.0.0'),
-          installDirectory: '/install',
-          dataDirectory: '/data',
-          capabilities: capabilities,
-          config: const {'greeting': 'hi'},
-        ).toJson(),
-      );
+  Future<Object?> init({
+    List<String> capabilities = const ['commands', 'events', 'config'],
+  }) => channel.request(
+    IpcMethod.init,
+    InitRequest(
+      plugin: const PluginDescriptor(
+        id: 'probe',
+        name: 'Probe',
+        version: '1.0.0',
+      ),
+      installDirectory: '/install',
+      dataDirectory: '/data',
+      capabilities: capabilities,
+      config: const {'greeting': 'hi'},
+    ).toJson(),
+  );
 
-  Future<Object?> shutdown({int graceMillis = 1000}) =>
-      channel.request(IpcMethod.shutdown, ShutdownRequest(reason: 'test', graceMillis: graceMillis).toJson());
+  Future<Object?> shutdown({int graceMillis = 1000}) => channel.request(
+    IpcMethod.shutdown,
+    ShutdownRequest(reason: 'test', graceMillis: graceMillis).toJson(),
+  );
 }
 
 void main() {
@@ -135,15 +187,35 @@ void main() {
     expect(host.subscribed, ['player.join']);
     expect(host.logs.map((l) => l.message), contains('printed line'));
 
-    final result = CommandResult.fromJson(await host.channel.request(
-      IpcMethod.commandExecute,
-      CommandInvocation(name: 'hello', args: ['Ayu'], sender: 'console').toJson(),
-    ));
+    final result = CommandResult.fromJson(
+      await host.channel.request(
+        IpcMethod.commandExecute,
+        CommandInvocation(
+          name: 'hello',
+          args: ['Ayu'],
+          sender: 'console',
+        ).toJson(),
+      ),
+    );
     expect(result.success, isTrue);
     expect(result.message, 'Hello Ayu (hi)');
 
-    host.channel.notify(IpcMethod.event, const EventEnvelope(type: 'player.join', data: {'player': 'p1'}, timestampMillis: 1).toJson());
-    host.channel.notify(IpcMethod.event, const EventEnvelope(type: 'unrelated', data: {}, timestampMillis: 2).toJson());
+    host.channel.notify(
+      IpcMethod.event,
+      const EventEnvelope(
+        type: 'player.join',
+        data: {'player': 'p1'},
+        timestampMillis: 1,
+      ).toJson(),
+    );
+    host.channel.notify(
+      IpcMethod.event,
+      const EventEnvelope(
+        type: 'unrelated',
+        data: {},
+        timestampMillis: 2,
+      ).toJson(),
+    );
     await host.channel.request(IpcMethod.ping);
     expect(plugin.events.map((e) => e.data['player']), ['p1']);
 
@@ -164,27 +236,38 @@ void main() {
     await host.hello.future;
     await expectLater(
       host.init(),
-      throwsA(isA<IpcException>()
-          .having((e) => e.code, 'code', IpcErrorCode.internal)
-          .having((e) => e.message, 'message', contains('cannot enable'))),
+      throwsA(
+        isA<IpcException>()
+            .having((e) => e.code, 'code', IpcErrorCode.internal)
+            .having((e) => e.message, 'message', contains('cannot enable')),
+      ),
     );
     await host.channel.close();
     expect(await exitCode, PluginExitCode.hostLost);
   });
 
-  test('undeclared capabilities are refused locally before any request', () async {
-    final host = _FakeHost();
-    final plugin = _Probe();
-    final exitCode = runPlugin(plugin, options: host.pluginOptions);
-    await host.hello.future;
-    await expectLater(
-      host.init(capabilities: const []),
-      throwsA(isA<IpcException>().having((e) => e.message, 'message', contains('commands'))),
-    );
-    expect(host.registered, isEmpty);
-    await host.channel.close();
-    await exitCode;
-  });
+  test(
+    'undeclared capabilities are refused locally before any request',
+    () async {
+      final host = _FakeHost();
+      final plugin = _Probe();
+      final exitCode = runPlugin(plugin, options: host.pluginOptions);
+      await host.hello.future;
+      await expectLater(
+        host.init(capabilities: const []),
+        throwsA(
+          isA<IpcException>().having(
+            (e) => e.message,
+            'message',
+            contains('commands'),
+          ),
+        ),
+      );
+      expect(host.registered, isEmpty);
+      await host.channel.close();
+      await exitCode;
+    },
+  );
 
   test('losing the host runs onDisable and exits with hostLost', () async {
     final host = _FakeHost();
@@ -207,8 +290,42 @@ void main() {
     await host.shutdown(graceMillis: 100);
     expect(await exitCode, PluginExitCode.ok);
     expect(watch.elapsed, lessThan(const Duration(seconds: 3)));
-    expect(host.logs.any((l) => l.level == IpcLogLevel.error && l.message.contains('grace')), isTrue);
+    expect(
+      host.logs.any(
+        (l) => l.level == IpcLogLevel.error && l.message.contains('grace'),
+      ),
+      isTrue,
+    );
   });
+
+  test(
+    'a declared listener is subscribed once and removed on shutdown',
+    () async {
+      final host = _FakeHost();
+      final plugin = _ListedPlugin();
+      final exitCode = runPlugin(plugin, options: host.pluginOptions);
+      await host.hello.future;
+      await host.init();
+      expect(plugin.listenerReads, 1);
+      expect(host.subscribed, ['demo.ping']);
+      host.channel.notify(
+        IpcMethod.event,
+        const EventEnvelope(
+          type: 'demo.ping',
+          data: {'n': '1'},
+          timestampMillis: 1,
+        ).toJson(),
+      );
+      await host.channel.request(IpcMethod.ping);
+      expect(plugin.listener.hits, 1);
+      await expectLater(host.init(), throwsA(isA<IpcException>()));
+      expect(host.subscribed, ['demo.ping']);
+      await host.shutdown();
+      expect(await exitCode, PluginExitCode.ok);
+      expect(host.unsubscribed, ['demo.ping']);
+      expect(plugin.listener.hits, 1);
+    },
+  );
 
   test('a host that never answers hello makes the worker give up', () async {
     final hostToPlugin = StreamController<List<int>>();

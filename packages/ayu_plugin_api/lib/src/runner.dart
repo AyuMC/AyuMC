@@ -177,10 +177,14 @@ final class _PluginRunner implements HostLink {
       case IpcMethod.ping:
         return const <String, Object?>{};
       case IpcMethod.eventDecide:
-        final decision = await _requireContext().events.judge(DecisionRequest.fromJson(params));
+        final decision = await _requireContext().events.judge(
+          DecisionRequest.fromJson(params),
+        );
         return decision.toResponse().toJson();
       case IpcMethod.primitiveDecide:
-        final decision = await _requireContext().primitives.judge(DecisionRequest.fromJson(params));
+        final decision = await _requireContext().primitives.judge(
+          DecisionRequest.fromJson(params),
+        );
         return decision.toResponse().toJson();
       case IpcMethod.commandExecute:
         final context = _requireContext();
@@ -216,20 +220,37 @@ final class _PluginRunner implements HostLink {
       case IpcMethod.event:
         unawaited(context.events.dispatch(EventEnvelope.fromJson(params)));
       case IpcMethod.eventBatch:
-        unawaited(_dispatchSequentially(EventBatch.fromJson(params).items, context.events.dispatch));
+        unawaited(
+          _dispatchSequentially(
+            EventBatch.fromJson(params).items,
+            context.events.dispatch,
+          ),
+        );
       case IpcMethod.primitive:
-        unawaited(context.primitives.dispatch(PrimitiveEnvelope.fromJson(params)));
+        unawaited(
+          context.primitives.dispatch(PrimitiveEnvelope.fromJson(params)),
+        );
       case IpcMethod.primitiveBatch:
-        unawaited(_dispatchSequentially(PrimitiveBatch.fromJson(params).items, context.primitives.dispatch));
+        unawaited(
+          _dispatchSequentially(
+            PrimitiveBatch.fromJson(params).items,
+            context.primitives.dispatch,
+          ),
+        );
       case IpcMethod.contractChanged:
-        context.events.notifyAvailability(ContractAvailability.fromJson(params));
+        context.events.notifyAvailability(
+          ContractAvailability.fromJson(params),
+        );
       case IpcMethod.deliveryGap:
         context.events.notifyGap(DeliveryGap.fromJson(params));
     }
   }
 
   /// Items of one batch keep their order relative to each other.
-  static Future<void> _dispatchSequentially<T>(List<T> items, Future<void> Function(T) dispatch) async {
+  static Future<void> _dispatchSequentially<T>(
+    List<T> items,
+    Future<void> Function(T) dispatch,
+  ) async {
     for (final item in items) {
       await dispatch(item);
     }
@@ -260,6 +281,17 @@ final class _PluginRunner implements HostLink {
       await _bind(active);
       await active.onEnable();
     } catch (error, stackTrace) {
+      try {
+        await Future<void>.sync(
+          () => _active?.onDisable(),
+        ).timeout(const Duration(seconds: 2));
+      } catch (disableError, disableStack) {
+        context.log.error(
+          'onDisable after a failed onEnable',
+          disableError,
+          disableStack,
+        );
+      }
       await _releaseOwned();
       context.timers.cancelAll();
       throw IpcException.code(

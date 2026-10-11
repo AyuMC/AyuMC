@@ -26,4 +26,5 @@ export 'package:ayu_ipc/ayu_ipc.dart'
 export 'src/context.dart';
 export 'src/listeners.dart';
 export 'src/plugin.dart' hide attachContext;
-export 'src/runner.dart' show Ayu, PluginExitCode, PluginRunnerOptions, runPlugin, sdkVersion;
+export 'src/runner.dart'
+    show Ayu, PluginExitCode, PluginRunnerOptions, runPlugin, sdkVersion;

@@ -4,7 +4,11 @@ import 'package:ayu_ipc/ayu_ipc.dart';
 
 /// A public event contract. [id] is what the host routes. [decode] builds the typed payload.
 final class EventContract<T> {
-  const EventContract({required this.id, required this.version, required this.decode});
+  const EventContract({
+    required this.id,
+    required this.version,
+    required this.decode,
+  });
 
   final String id;
   final String version;
@@ -32,7 +36,10 @@ final class EventBinding<T> implements BoundHandler {
 }
 
 /// Binds [handle] to [contract]. The handler's argument type must match the contract.
-EventBinding<T> on<T>(EventContract<T> contract, void Function(T event) handle) => EventBinding(contract, handle);
+EventBinding<T> on<T>(
+  EventContract<T> contract,
+  void Function(T event) handle,
+) => EventBinding(contract, handle);
 
 /// A group of event handlers. Declare instances once; do not allocate them in the getter.
 abstract class Listener {

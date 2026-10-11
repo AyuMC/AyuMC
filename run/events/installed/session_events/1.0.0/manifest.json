@@ -13,8 +13,8 @@
   "artifacts": {
     "windows-x64": {
       "path": "bin/windows-x64/plugin.aot",
-      "sha256": "4748d3a08bb659a9dac2cc2b8b7112d3401a9c73391c7a97eb501867e38ae18e",
-      "size": 1159560,
+      "sha256": "e18943b67a4719be5d4aea12ed39479fb51bfee88a812fc16d98d48168d9f745",
+      "size": 1160368,
       "dartSdk": "3.13.4"
     }
   },

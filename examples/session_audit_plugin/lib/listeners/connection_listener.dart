@@ -15,26 +15,32 @@ final class ConnectionListener extends Listener {
     on(SessionEvents.left, _leave),
   ];
 
-  void _join(SessionJoined event) => _write(
-    enabled: config.snapshot.read(config.logJoins),
-    message: config.joinMessage,
-    name: event.player.name,
-  );
+  void _join(SessionJoined event) =>
+      _write(config.logJoins, config.joinMessage, event.player.name);
 
-  void _leave(SessionLeft event) => _write(
-    enabled: config.snapshot.read(config.logLeaves),
-    message: config.leaveMessage,
-    name: event.player.name,
-  );
+  void _leave(SessionLeft event) =>
+      _write(config.logLeaves, config.leaveMessage, event.player.name);
 
-  void _write({
-    required bool enabled,
-    required MessageOption message,
-    required String name,
-  }) {
-    if (!enabled) return;
-    context.log.info(
-      '[SessionAudit] ${config.snapshot.render(message, PlaceholderContext(playerName: name))}',
+  void _write(BoolOption enabled, MessageOption message, String name) {
+    final snapshot = config.snapshot;
+    final line = formatAuditLine(
+      snapshot: snapshot,
+      enabled: enabled,
+      message: message,
+      name: name,
     );
+    if (line == null) return;
+    context.log.info('[SessionAudit] $line');
   }
+}
+
+/// One snapshot supplies both the switch and the template.
+String? formatAuditLine({
+  required ConfigSnapshot snapshot,
+  required BoolOption enabled,
+  required MessageOption message,
+  required String name,
+}) {
+  if (!snapshot.read(enabled)) return null;
+  return snapshot.render(message, PlaceholderContext(playerName: name));
 }
