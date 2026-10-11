@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:ayu_core/ayu_core.dart' show EngineException, EnginePackage;
 import 'package:ayu_ipc/ayu_ipc.dart';
 import 'package:ayu_logging/ayu_logging.dart';
 import 'package:ayu_package/ayu_package.dart';
@@ -21,6 +22,12 @@ final class DeskResult {
 
 String explainFailure(Object error) {
   if (error is PluginHostException) {
+    final extra = error.details
+        .where((detail) => detail.trim().isNotEmpty)
+        .join(' · ');
+    return extra.isEmpty ? error.message : '${error.message} · $extra';
+  }
+  if (error is EngineException) {
     final extra = error.details
         .where((detail) => detail.trim().isNotEmpty)
         .join(' · ');
@@ -70,14 +77,21 @@ final class PackageDesk {
 
   bool get busy => activity != null;
 
-  PluginHost? get host {
-    final override = hostOverride;
-    if (override != null) return override;
-    if (control.state != ServerRunState.running) return null;
-    return control.server?.plugins;
-  }
+  /// Live host used by tests that inject [hostOverride]. The running server
+  /// engine is not exposed here; package calls go through [ServerControl].
+  PluginHost? get host => hostOverride;
 
-  bool get serverRunning => host != null;
+  bool get serverRunning =>
+      hostOverride != null || control.state == ServerRunState.running;
+
+  bool get _remoteServer =>
+      hostOverride == null && control.state == ServerRunState.running;
+
+  Version? get _runtimeSdk {
+    final sdk = control.runtimeSdk;
+    if (sdk == null || sdk.isEmpty) return null;
+    return Version.parse(sdk);
+  }
 
   /// Runs [action] on the same queue as install and refresh, so a start cannot
   /// rewrite the stores while a catalog reload still has them open.
@@ -89,11 +103,12 @@ final class PackageDesk {
     await _reload(rescan: true);
     final count = inventory.library.length;
     final bad = inventory.failures.length;
-    if (bad == 0)
+    if (bad == 0) {
       return DeskResult(
         true,
         'Found $count package(s) in the library. Nothing was installed.',
       );
+    }
     return DeskResult(
       false,
       'Found $count package(s). $bad file(s) could not be read.',
@@ -183,10 +198,9 @@ final class PackageDesk {
 
   Future<ScanContext> _context() async {
     profileWarning = null;
-    final running = control.server;
-    var profileId = ProfileCatalog.defaultProfile.id;
-    if (control.state == ServerRunState.running && running != null) {
-      profileId = running.profile.id;
+    var profileId = control.profileId ?? ProfileCatalog.defaultProfile.id;
+    if (control.state == ServerRunState.running && control.profileId != null) {
+      profileId = control.profileId!;
     } else {
       final file = ServerLayout(control.root).serverConfigFile;
       if (await file.exists()) {
@@ -202,7 +216,7 @@ final class PackageDesk {
       profileId: profileId,
       apiVersion: Version.parse(IpcProtocol.apiVersion),
       target: RuntimeTarget.current(),
-      runtimeSdk: host?.runtime?.version,
+      runtimeSdk: host?.runtime?.version ?? _runtimeSdk,
     );
   }
 
@@ -214,6 +228,11 @@ final class PackageDesk {
         packages.add(await _fromSnapshot(snapshot, live));
       }
       return packages;
+    }
+    if (_remoteServer) {
+      return [
+        for (final view in await control.packages()) await _fromEngine(view),
+      ];
     }
     final layout = ServerLayout(control.root);
     return [
@@ -248,6 +267,50 @@ final class PackageDesk {
       installDirectory: snapshot.installDirectory,
       dataDirectory: snapshot.dataDirectory,
     );
+  }
+
+  Future<InstalledPackage> _fromEngine(EnginePackage view) async {
+    final manifest = await _manifestFromDirectory(
+      view.installDirectory,
+      id: view.id,
+      version: view.version,
+    );
+    return InstalledPackage(
+      manifest: manifest,
+      enabled: view.enabled,
+      state: view.state,
+      lastError: view.lastError,
+      stderrTail: view.stderrTail,
+      pid: view.pid,
+      restartCount: view.restartCount,
+      droppedEvents: view.droppedEvents,
+      subscribers: view.subscribers,
+      configState: view.configState,
+      configRevision: view.configRevision,
+      configSchema: view.configSchema,
+      configError: view.configError,
+      installDirectory: view.installDirectory,
+      dataDirectory: view.dataDirectory,
+    );
+  }
+
+  Future<PluginManifest> _manifestFromDirectory(
+    String directory, {
+    required String id,
+    required String version,
+  }) async {
+    final file = File(p.join(directory, PackageSpec.manifestFileName));
+    try {
+      return PluginManifest.parse(await file.readAsString());
+    } on Object {
+      return PluginManifest(
+        id: id,
+        name: id,
+        version: Version.parse(version),
+        api: VersionConstraint.parse(IpcProtocol.apiVersion),
+        packageType: PackageType.plugin,
+      );
+    }
   }
 
   Future<PluginManifest> _manifestOrSnapshot(PluginSnapshot snapshot) async {
@@ -312,6 +375,25 @@ final class PackageDesk {
             return DeskResult(
               false,
               'Installed ${snapshot.id} ${snapshot.version}, but it is ${snapshot.state.name}. ${explainFailure(error)}',
+            );
+          }
+          return DeskResult(false, explainFailure(error));
+        }
+      }
+      if (_remoteServer) {
+        try {
+          final view = await control.installPackage(
+            opened.file.path,
+            enable: enable,
+            id: opened.manifest.id,
+          );
+          return _installedView(view);
+        } on EngineException catch (error) {
+          final view = error.package;
+          if (view != null) {
+            return DeskResult(
+              false,
+              'Installed ${view.id} ${view.version}, but it is ${view.state.name}. ${explainFailure(error)}',
             );
           }
           return DeskResult(false, explainFailure(error));
@@ -393,20 +475,7 @@ final class PackageDesk {
     final live = host;
     if (live != null) {
       try {
-        final snapshot = await live.enable(id);
-        if (snapshot.state == PluginState.suspended) {
-          return DeskResult(
-            true,
-            'Enabled ${snapshot.id}. Suspended — ${snapshot.lastError ?? 'required Event Pack is missing.'}',
-          );
-        }
-        if (snapshot.state != PluginState.active) {
-          return DeskResult(
-            false,
-            'Enable of ${snapshot.id} finished in ${snapshot.state.name}. ${snapshot.lastError ?? ''}',
-          );
-        }
-        return DeskResult(true, 'Enabled ${snapshot.id}. Active — running.');
+        return _enabledMessage(await live.enable(id));
       } on PluginHostException catch (error) {
         final snapshot = live.plugin(id);
         if (snapshot != null && snapshot.state != PluginState.active) {
@@ -418,9 +487,24 @@ final class PackageDesk {
         return DeskResult(false, explainFailure(error));
       }
     }
+    if (_remoteServer) {
+      try {
+        return _enabledView(await control.enablePackage(id));
+      } on EngineException catch (error) {
+        final view = error.package;
+        if (view != null && view.state != PluginState.active) {
+          return DeskResult(
+            false,
+            'Enable of $id did not start the worker (${view.state.name}). ${explainFailure(error)}',
+          );
+        }
+        return DeskResult(false, explainFailure(error));
+      }
+    }
     final found = await _stored(id);
-    if (found == null)
+    if (found == null) {
       return DeskResult(false, 'Package "$id" is not installed.');
+    }
     final blockers = compatibilityBlockers(found.manifest, await _context());
     if (blockers.isNotEmpty) return DeskResult(false, blockers.join(' '));
     final installed = await _readInstalled();
@@ -449,20 +533,46 @@ final class PackageDesk {
                 .toList();
       try {
         final snapshot = await live.disable(id, cascade: cascade);
-        final extra = cascade && affected.isNotEmpty
-            ? ' Suspended ${affected.join(', ')}.'
-            : '';
-        return DeskResult(
-          true,
-          'Disabled ${snapshot.id}. ${runtimeLabel(installed: true, serverRunning: true, enabled: snapshot.enabled, state: snapshot.state, error: snapshot.lastError)}$extra',
+        return _disabledMessage(
+          id: snapshot.id,
+          enabled: snapshot.enabled,
+          state: snapshot.state,
+          lastError: snapshot.lastError,
+          extra: cascade && affected.isNotEmpty
+              ? ' Suspended ${affected.join(', ')}.'
+              : '',
         );
       } on PluginHostException catch (error) {
         return DeskResult(false, explainFailure(error));
       }
     }
+    if (_remoteServer) {
+      final current = inventory.installedById(id);
+      final affected = current == null
+          ? const <String>[]
+          : contractConsumers(inventory, current.manifest)
+                .where((package) => package.state == PluginState.active)
+                .map((package) => package.manifest.id)
+                .toList();
+      try {
+        final view = await control.disablePackage(id, cascade: cascade);
+        return _disabledMessage(
+          id: view.id,
+          enabled: view.enabled,
+          state: view.state,
+          lastError: view.lastError,
+          extra: cascade && affected.isNotEmpty
+              ? ' Suspended ${affected.join(', ')}.'
+              : '',
+        );
+      } on EngineException catch (error) {
+        return DeskResult(false, explainFailure(error));
+      }
+    }
     final found = await _stored(id);
-    if (found == null)
+    if (found == null) {
       return DeskResult(false, 'Package "$id" is not installed.');
+    }
     final installed = await _readInstalled();
     final dependents = packageDependents(Inventory(installed: installed), id)
         .where((package) => package.enabled)
@@ -500,11 +610,12 @@ final class PackageDesk {
     final opened = fresh as AyuPackage;
     try {
       final blockers = compatibilityBlockers(opened.manifest, await _context());
-      if (blockers.isNotEmpty)
+      if (blockers.isNotEmpty) {
         return DeskResult(
           false,
           'Cannot update ${opened.manifest.id}. ${blockers.join(' ')}',
         );
+      }
       final live = host;
       if (live != null) {
         try {
@@ -529,6 +640,32 @@ final class PackageDesk {
           return DeskResult(false, '${explainFailure(error)}$restored');
         }
       }
+      if (_remoteServer) {
+        try {
+          final view = await control.updatePackage(
+            opened.file.path,
+            id: opened.manifest.id,
+          );
+          final rolled = view.version != opened.manifest.version.toString();
+          if (rolled) {
+            return DeskResult(
+              false,
+              'Update did not stay on ${opened.manifest.version}. Installed version is ${view.version} (${view.state.name}).',
+            );
+          }
+          return DeskResult(
+            view.state != PluginState.failed &&
+                view.state != PluginState.crashed,
+            'Updated ${view.id} to ${view.version}. ${runtimeLabel(installed: true, serverRunning: true, enabled: view.enabled, state: view.state, error: view.lastError)}',
+          );
+        } on EngineException catch (error) {
+          final view = error.package;
+          final restored = view == null
+              ? ''
+              : ' Installed version is now ${view.version} (${view.state.name}).';
+          return DeskResult(false, '${explainFailure(error)}$restored');
+        }
+      }
       return await _updateStopped(opened);
     } finally {
       await opened.close();
@@ -538,11 +675,12 @@ final class PackageDesk {
   Future<DeskResult> _updateStopped(AyuPackage opened) async {
     final manifest = opened.manifest;
     final found = await _stored(manifest.id);
-    if (found == null)
+    if (found == null) {
       return DeskResult(
         false,
         '${manifest.id} is not installed. Install it first.',
       );
+    }
     if (found.manifest.packageType != manifest.packageType) {
       return DeskResult(
         false,
@@ -598,20 +736,27 @@ final class PackageDesk {
 
   Future<DeskResult> _uninstall(String id, {required bool cascade}) async {
     final live = host;
-    if (live != null) {
+    if (live != null || _remoteServer) {
       try {
-        await live.uninstall(id, cascade: cascade);
+        if (live != null) {
+          await live.uninstall(id, cascade: cascade);
+        } else {
+          await control.uninstallPackage(id, cascade: cascade);
+        }
         return DeskResult(
           true,
           'Uninstalled $id. The library copy and the saved plugin data were kept.',
         );
       } on PluginHostException catch (error) {
         return DeskResult(false, explainFailure(error));
+      } on EngineException catch (error) {
+        return DeskResult(false, explainFailure(error));
       }
     }
     final found = await _stored(id);
-    if (found == null)
+    if (found == null) {
       return DeskResult(false, 'Package "$id" is not installed.');
+    }
     final installed = await _readInstalled();
     final dependents = packageDependents(
       Inventory(installed: installed),
@@ -669,20 +814,87 @@ final class PackageDesk {
     }
   }
 
-  DeskResult _installedMessage(PluginSnapshot snapshot) {
+  DeskResult _installedMessage(PluginSnapshot snapshot) => _installedView(
+    EnginePackage(
+      id: snapshot.id,
+      version: snapshot.version.toString(),
+      state: snapshot.state,
+      enabled: snapshot.enabled,
+      lastError: snapshot.lastError,
+      pid: snapshot.pid,
+      droppedEvents: snapshot.droppedEvents,
+      restartCount: snapshot.restartCount,
+      stderrTail: snapshot.stderrTail,
+      configState: snapshot.configState,
+      configRevision: snapshot.configRevision,
+      configSchema: snapshot.configSchema,
+      configError: snapshot.configError,
+      installDirectory: snapshot.installDirectory,
+      dataDirectory: snapshot.dataDirectory,
+      subscribers: const [],
+    ),
+  );
+
+  DeskResult _installedView(EnginePackage view) {
     final label = runtimeLabel(
       installed: true,
       serverRunning: true,
-      enabled: snapshot.enabled,
-      state: snapshot.state,
-      error: snapshot.lastError,
+      enabled: view.enabled,
+      state: view.state,
+      error: view.lastError,
     );
     final failed =
-        snapshot.state == PluginState.failed ||
-        snapshot.state == PluginState.crashed;
+        view.state == PluginState.failed || view.state == PluginState.crashed;
+    return DeskResult(!failed, 'Installed ${view.id} ${view.version}. $label');
+  }
+
+  DeskResult _enabledMessage(PluginSnapshot snapshot) => _enabledView(
+    EnginePackage(
+      id: snapshot.id,
+      version: snapshot.version.toString(),
+      state: snapshot.state,
+      enabled: snapshot.enabled,
+      lastError: snapshot.lastError,
+      pid: snapshot.pid,
+      droppedEvents: snapshot.droppedEvents,
+      restartCount: snapshot.restartCount,
+      stderrTail: snapshot.stderrTail,
+      configState: snapshot.configState,
+      configRevision: snapshot.configRevision,
+      configSchema: snapshot.configSchema,
+      configError: snapshot.configError,
+      installDirectory: snapshot.installDirectory,
+      dataDirectory: snapshot.dataDirectory,
+      subscribers: const [],
+    ),
+  );
+
+  DeskResult _enabledView(EnginePackage view) {
+    if (view.state == PluginState.suspended) {
+      return DeskResult(
+        true,
+        'Enabled ${view.id}. Suspended — ${view.lastError ?? 'required Event Pack is missing.'}',
+      );
+    }
+    if (view.state != PluginState.active) {
+      return DeskResult(
+        false,
+        'Enable of ${view.id} finished in ${view.state.name}. ${view.lastError ?? ''}',
+      );
+    }
+    return DeskResult(true, 'Enabled ${view.id}. Active — running.');
+  }
+
+  DeskResult _disabledMessage({
+    required String id,
+    required bool enabled,
+    required PluginState state,
+    required String? lastError,
+    required String extra,
+  }) {
     return DeskResult(
-      !failed,
-      'Installed ${snapshot.id} ${snapshot.version}. $label',
+      true,
+      'Disabled $id. ${runtimeLabel(installed: true, serverRunning: true, enabled: enabled, state: state, error: lastError)}$extra',
     );
   }
 
@@ -698,10 +910,11 @@ final class PackageDesk {
         if (package.manifest.id == dependency.id) found = package;
       }
       if (found == null) {
-        if (!dependency.optional)
+        if (!dependency.optional) {
           problems.add(
             '"${dependency.id}" ${dependency.version} is not installed',
           );
+        }
         continue;
       }
       if (!dependency.version.allows(found.manifest.version)) {

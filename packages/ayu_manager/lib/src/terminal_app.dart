@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:ayu_core/ayu_core.dart';
 import 'package:ayu_ipc/ayu_ipc.dart';
 import 'package:ayu_logging/ayu_logging.dart';
 import 'package:ayu_runtime/ayu_runtime.dart';
@@ -30,7 +31,7 @@ final class ManagerApp {
   late final ManagerSession session;
   final KeyDecoder _keys = KeyDecoder();
   StreamSubscription<List<int>>? _keysSubscription;
-  StreamSubscription<PluginHostEvent>? _hostEvents;
+  StreamSubscription<EngineNotice>? _hostEvents;
   Timer? _paintTimer;
   Timer? _clockTimer;
   bool _dirty = true;
@@ -56,20 +57,17 @@ final class ManagerApp {
       return _lineMode();
     }
     stdout.write('\x1b[?1049h\x1b[?25l');
-    _keysSubscription = stdin.listen(
-      (bytes) {
-        enableTerminalFeatures();
-        try {
-          for (final event in _keys.add(bytes)) {
-            _onKey(event);
-          }
-        } catch (error) {
-          session.notice('$error');
+    _keysSubscription = stdin.listen((bytes) {
+      enableTerminalFeatures();
+      try {
+        for (final event in _keys.add(bytes)) {
+          _onKey(event);
         }
-        _dirty = true;
-      },
-      cancelOnError: false,
-    );
+      } catch (error) {
+        session.notice('$error');
+      }
+      _dirty = true;
+    }, cancelOnError: false);
     _paintTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
       if (_dirty || session.desk.activity != null) _paint();
     });
@@ -86,6 +84,7 @@ final class ManagerApp {
     _clockTimer?.cancel();
     await _keysSubscription?.cancel();
     await _hostEvents?.cancel();
+    await control.dispose();
     stdout.write('\x1b[?25h\x1b[?1049l');
     stdin.echoMode = echo;
     stdin.lineMode = line;
@@ -177,21 +176,23 @@ final class ManagerApp {
 
   Future<DeskResult> _install(CatalogCommand command) async {
     final package = _library(command.archivePath);
-    if (package == null)
+    if (package == null) {
       return const DeskResult(
         false,
         'That package is no longer in the library. Press R.',
       );
+    }
     return session.desk.install(package, enable: command.enable);
   }
 
   Future<DeskResult> _update(CatalogCommand command) async {
     final package = _library(command.archivePath);
-    if (package == null)
+    if (package == null) {
       return const DeskResult(
         false,
         'That package is no longer in the library. Press R.',
       );
+    }
     return session.desk.update(package);
   }
 
@@ -226,12 +227,16 @@ final class ManagerApp {
       session.notice(await _packageCommand(line));
       return;
     }
-    if (control.state != ServerRunState.running || control.server == null) {
+    if (control.state != ServerRunState.running) {
       session.notice('Start the server before sending console commands.');
       return;
     }
-    await control.server!.commands.execute(line);
-    session.notice('sent: $line');
+    try {
+      await control.executeCommand(line);
+      session.notice('sent: $line');
+    } on EngineException catch (error) {
+      session.notice(error.message);
+    }
   }
 
   bool _isPackageCommand(String lower) {
@@ -262,13 +267,12 @@ final class ManagerApp {
   Future<void> _watchHost() async {
     await _hostEvents?.cancel();
     _hostEvents = null;
-    final host = session.desk.host;
-    if (host == null) return;
-    _hostEvents = host.events.listen((event) {
-      if (event is! PluginStateChanged) return;
-      session.notice(
-        '${event.pluginId}: ${event.from.name} -> ${event.to.name}',
-      );
+    if (control.state != ServerRunState.running && session.desk.host == null) {
+      return;
+    }
+    _hostEvents = control.notices.listen((notice) {
+      if (notice is! EnginePluginStateNotice) return;
+      session.notice('${notice.pluginId}: ${notice.from} -> ${notice.to}');
       unawaited(session.desk.reload());
     });
   }
@@ -325,7 +329,11 @@ final class ManagerApp {
           profileId: profile,
           apiVersion: Version.parse(IpcProtocol.apiVersion),
           target: RuntimeTarget.current(),
-          runtimeSdk: session.desk.host?.runtime?.version,
+          runtimeSdk:
+              session.desk.host?.runtime?.version ??
+              (control.runtimeSdk == null
+                  ? null
+                  : Version.parse(control.runtimeSdk!)),
         );
         return LibraryPackage(
           file: file,
@@ -382,13 +390,15 @@ final class ManagerApp {
         stdout.writeln(session.notices.isEmpty ? '' : session.notices.last);
         continue;
       }
-      if (text == 'start' || text == 'stop' || text == 'restart')
+      if (text == 'start' || text == 'stop' || text == 'restart') {
         session.section = ManagerSection.controls;
+      }
       await _submit(text);
       stdout.writeln(session.notices.isEmpty ? '' : session.notices.last);
     }
     LogHub.listeners.remove(_onLog);
     LogHub.echo = true;
+    await control.dispose();
     return 0;
   }
 }

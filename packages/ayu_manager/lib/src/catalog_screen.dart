@@ -96,8 +96,9 @@ final class CatalogScreen {
       return null;
     }
     if (event.key == ManagerKey.enter && !detail) {
-      if (_selected() == null)
+      if (_selected() == null) {
         return const CatalogCommand.message('Nothing to inspect.');
+      }
       detail = true;
       detailOffset = 0;
       return null;
@@ -109,8 +110,9 @@ final class CatalogScreen {
       case 'r':
         return const CatalogCommand.action(CatalogAction.refresh);
       case 'i':
-        if (_selected() == null)
+        if (_selected() == null) {
           return const CatalogCommand.message('Nothing to inspect.');
+        }
         detail = true;
         detailOffset = 0;
         return null;
@@ -169,14 +171,17 @@ final class CatalogScreen {
   CatalogCommand? _askInstall({required bool enable}) {
     final row = _selected();
     final library = row?.library;
-    if (row?.failure != null)
+    if (row?.failure != null) {
       return const CatalogCommand.message(
         'This file could not be read. Open it with Enter for the error.',
       );
-    if (library == null)
+    }
+    if (library == null) {
       return const CatalogCommand.message('Select an available package first.');
-    if (!library.compatible)
+    }
+    if (!library.compatible) {
       return CatalogCommand.message(library.blockers.join(' '));
+    }
     final installed = desk.inventory.installedById(library.manifest.id);
     if (installed != null &&
         installed.manifest.version == library.manifest.version) {
@@ -184,10 +189,11 @@ final class CatalogScreen {
         '${library.manifest.id} ${library.manifest.version} is already installed.',
       );
     }
-    if (installed != null)
+    if (installed != null) {
       return const CatalogCommand.message(
         'That version is already installed. Press U to replace it.',
       );
+    }
     _arm(
       enable
           ? 'Install ${library.manifest.id} ${library.manifest.version} and enable it?\n${_preview(library)}'
@@ -207,17 +213,19 @@ final class CatalogScreen {
     final library = row?.library;
     if (installed == null) return null;
     if (library != null &&
-        library.manifest.version != installed.manifest.version)
+        library.manifest.version != installed.manifest.version) {
       return null;
+    }
     return row;
   }
 
   CatalogCommand? _askEnable() {
     final installed = _installedSelection()?.installed;
-    if (installed == null)
+    if (installed == null) {
       return const CatalogCommand.message(
         'Select an installed package to enable.',
       );
+    }
     if (desk.serverRunning && installed.state == PluginState.active) {
       return CatalogCommand.message(
         '${installed.manifest.id} is already active.',
@@ -235,10 +243,11 @@ final class CatalogScreen {
 
   CatalogCommand? _askDisable() {
     final installed = _installedSelection()?.installed;
-    if (installed == null)
+    if (installed == null) {
       return const CatalogCommand.message(
         'Select an installed package to disable.',
       );
+    }
     final dependents = packageDependents(desk.inventory, installed.manifest.id);
     final blocking = dependents
         .where(
@@ -301,22 +310,26 @@ final class CatalogScreen {
                 package.compatible,
           )
           .toList();
-      if (others.isEmpty)
+      if (others.isEmpty) {
         return const CatalogCommand.message(
           'No other version is in the library.',
         );
-      if (others.length > 1)
+      }
+      if (others.length > 1) {
         return const CatalogCommand.message(
           'Select the version under Other versions.',
         );
+      }
       candidate = others.single;
     }
-    if (candidate == null || installed == null)
+    if (candidate == null || installed == null) {
       return const CatalogCommand.message(
         'Select an installed package or another version.',
       );
-    if (!candidate.compatible)
+    }
+    if (!candidate.compatible) {
       return CatalogCommand.message(candidate.blockers.join(' '));
+    }
     _arm(
       'Replace ${installed.manifest.id} ${installed.manifest.version} with ${candidate.manifest.version}?\n'
       '${desk.serverRunning ? 'The running worker is stopped and the new version is started. If startup fails, the previous version is restored.' : 'The server is stopped, so the files change now and the new version starts on the next launch.'}',
@@ -330,10 +343,11 @@ final class CatalogScreen {
 
   CatalogCommand? _askUninstall() {
     final installed = _installedSelection()?.installed;
-    if (installed == null)
+    if (installed == null) {
       return const CatalogCommand.message(
         'Select an installed package to uninstall.',
       );
+    }
     final dependents = packageDependents(desk.inventory, installed.manifest.id);
     if (dependents.isNotEmpty) {
       return CatalogCommand.message(
@@ -541,8 +555,9 @@ final class CatalogScreen {
       failure: selected.failure,
     );
     final window = 16;
-    if (detailOffset > lines.length - 1)
+    if (detailOffset > lines.length - 1) {
       detailOffset = lines.isEmpty ? 0 : lines.length - 1;
+    }
     final start = detailOffset.clamp(0, lines.length);
     final slice = lines.skip(start).take(window);
     for (final line in slice) {

@@ -96,8 +96,9 @@ final class _FakeHost {
           )
           ..onRequest = _onRequest
           ..onNotification = (method, params) {
-            if (method == IpcMethod.log)
+            if (method == IpcMethod.log) {
               logs.add(LogNotification.fromJson(params));
+            }
           };
     pluginOptions = PluginRunnerOptions(
       input: hostToPlugin.stream,

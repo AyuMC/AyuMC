@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:ayu_core/ayu_core.dart';
 import 'package:ayu_manager/ayu_manager.dart';
+import 'package:ayu_protocol_189/ayu_protocol_189.dart';
 import 'package:ayu_package/ayu_package.dart';
 import 'package:ayu_runtime/ayu_runtime.dart';
 import 'package:path/path.dart' as p;
@@ -316,8 +318,9 @@ void main() {
       expect(result.message, contains('handshake'));
       final snapshot = harness.host.plugin('silent')!;
       expect(snapshot.state, PluginState.failed);
-      if (snapshot.pid != null)
+      if (snapshot.pid != null) {
         expect(await processGone(snapshot.pid!), isTrue);
+      }
       expect(package.existsSync(), isTrue);
     },
   );
@@ -440,7 +443,8 @@ void main() {
       );
       final control = ServerControl(root: root);
       addTearDown(() async {
-        if (control.server != null) await control.stop();
+        await control.stop();
+        await control.dispose();
       });
       final desk = PackageDesk(control: control, repositoryRoot: workspace);
       final previous = Directory.current;
@@ -457,12 +461,13 @@ void main() {
       );
       final started = await control.start();
       expect(control.state, ServerRunState.running, reason: started);
-      expect(control.server!.network, isNotNull);
+      expect(control.listeningPort, isNotNull);
 
       final logs = <String>[];
-      final subscription = control.server!.plugins.events.listen((event) {
-        if (event is PluginLogged)
-          logs.add('${event.pluginId} ${event.message}');
+      final subscription = control.notices.listen((notice) {
+        if (notice is EnginePluginLogNotice) {
+          logs.add('${notice.pluginId} ${notice.message}');
+        }
       });
       addTearDown(subscription.cancel);
 
@@ -472,7 +477,7 @@ void main() {
       );
       expect(audit.ok, isTrue, reason: audit.message);
       expect(
-        control.server!.plugins.plugin('session_audit')!.state,
+        (await control.package('session_audit'))!.state,
         PluginState.suspended,
       );
 
@@ -482,21 +487,17 @@ void main() {
       );
       expect(pack.ok, isTrue, reason: pack.message);
       await _until(
-        () =>
-            control.server!.plugins.plugin('session_audit')?.state ==
+        () async =>
+            (await control.package('session_audit'))?.state ==
             PluginState.active,
       );
       expect(
-        control.server!.plugins.plugin('session_events')!.state,
+        (await control.package('session_events'))!.state,
         PluginState.active,
       );
       expect(control.state, ServerRunState.running);
 
-      control.server!.plugins.primitives.observe('core.session.play_joined', {
-        'entityId': 7,
-        'name': 'Steve',
-        'uuid': 'abc',
-      });
+      await _playLogin(control.listeningPort!, 'Steve');
       await _until(
         () => logs.any(
           (line) => line.contains('PLAYER_JOINED') && line.contains('Steve'),
@@ -510,24 +511,14 @@ void main() {
       final disabled = await desk.disable('session_events', cascade: true);
       expect(disabled.ok, isTrue, reason: disabled.message);
       await _until(
-        () =>
-            control.server!.plugins.plugin('session_audit')?.state ==
+        () async =>
+            (await control.package('session_audit'))?.state ==
             PluginState.suspended,
-      );
-      expect(
-        control.server!.plugins.primitives.hasObservers(
-          'core.session.play_joined',
-        ),
-        isFalse,
       );
       final joined = logs
           .where((line) => line.contains('PLAYER_JOINED'))
           .length;
-      control.server!.plugins.primitives.observe('core.session.play_joined', {
-        'entityId': 8,
-        'name': 'Alex',
-        'uuid': 'def',
-      });
+      await _playLogin(control.listeningPort!, 'Alex');
       await Future<void>.delayed(const Duration(milliseconds: 600));
       expect(
         logs.where((line) => line.contains('PLAYER_JOINED')),
@@ -537,18 +528,11 @@ void main() {
       final enabled = await desk.enable('session_events');
       expect(enabled.ok, isTrue, reason: enabled.message);
       await _until(
-        () =>
-            control.server!.plugins.plugin('session_audit')?.state ==
-                PluginState.active &&
-            control.server!.plugins.primitives.hasObservers(
-              'core.session.play_joined',
-            ),
+        () async =>
+            (await control.package('session_audit'))?.state ==
+            PluginState.active,
       );
-      control.server!.plugins.primitives.observe('core.session.play_joined', {
-        'entityId': 9,
-        'name': 'Bob',
-        'uuid': 'ghi',
-      });
+      await _playLogin(control.listeningPort!, 'Bob');
       await _until(
         () =>
             logs.where((line) => line.contains('PLAYER_JOINED')).length ==
@@ -557,7 +541,7 @@ void main() {
 
       final data = File(
         p.join(
-          control.server!.plugins.plugin('session_audit')!.dataDirectory,
+          (await control.package('session_audit'))!.dataDirectory,
           'keep.txt',
         ),
       );
@@ -566,7 +550,7 @@ void main() {
       expect(removedAudit.ok, isTrue, reason: removedAudit.message);
       final removedPack = await desk.uninstall('session_events');
       expect(removedPack.ok, isTrue, reason: removedPack.message);
-      expect(control.server!.plugins.plugins, isEmpty);
+      expect(await control.packages(), isEmpty);
       expect(await sessionFile.length(), sessionBytes);
       expect(await sessionSource.length(), sourceBytes);
       expect(auditFile.existsSync(), isTrue);
@@ -662,10 +646,37 @@ Future<_Harness> _host({Duration hello = const Duration(seconds: 4)}) async {
   return _Harness(root, host, desk);
 }
 
-Future<void> _until(bool Function() ready) async {
+Future<void> _playLogin(int port, String name) async {
+  final socket = await Socket.connect(InternetAddress.loopbackIPv4, port);
+  socket.add(
+    encodePacket(0x00, [
+      ...encodeVarInt(47),
+      ...encodeString('localhost'),
+      ...encodeUnsignedShort(25565),
+      ...encodeVarInt(2),
+    ]),
+  );
+  socket.add(encodePacket(0x00, encodeString(name)));
+  final buffer = PacketBuffer();
+  var frames = 0;
+  try {
+    await socket.timeout(const Duration(seconds: 3)).forEach((chunk) {
+      buffer.add(chunk);
+      while (buffer.readFrame() != null) {
+        frames++;
+      }
+      if (frames >= 8) socket.destroy();
+    });
+  } on Object {
+    // The login is complete once the play sequence has arrived.
+  }
+  expect(frames, greaterThanOrEqualTo(8));
+}
+
+Future<void> _until(FutureOr<bool> Function() ready) async {
   final deadline = DateTime.now().add(const Duration(seconds: 8));
   while (DateTime.now().isBefore(deadline)) {
-    if (ready()) return;
+    if (await ready()) return;
     await Future<void>.delayed(const Duration(milliseconds: 40));
   }
   fail('condition was not reached');

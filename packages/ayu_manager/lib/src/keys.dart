@@ -45,13 +45,16 @@ final class KeyDecoder {
     if (lead == 0x1b) return _escape();
     if (lead == 0x00 || lead == 0xe0) return _windowsFunction();
     _pending.removeAt(0);
-    if (lead == 0x0d || lead == 0x0a)
+    if (lead == 0x0d || lead == 0x0a) {
       return const KeyEvent.nav(ManagerKey.enter);
-    if (lead == 0x7f || lead == 0x08)
+    }
+    if (lead == 0x7f || lead == 0x08) {
       return const KeyEvent.nav(ManagerKey.backspace);
+    }
     if (lead == 0x03) return const KeyEvent.nav(ManagerKey.quit);
-    if (lead >= 0x20 && lead < 0x7f)
+    if (lead >= 0x20 && lead < 0x7f) {
       return KeyEvent.text(String.fromCharCode(lead));
+    }
     return null;
   }
 

@@ -356,8 +356,9 @@ List<CatalogRow> buildCatalogRows({
       available.add(package);
       continue;
     }
-    if (current.manifest.version != package.manifest.version)
+    if (current.manifest.version != package.manifest.version) {
       updates.add(package);
+    }
   }
 
   final needle = filter.trim().toLowerCase();
@@ -594,10 +595,14 @@ List<String> describeSelection({
       if (installed.subscribers.isNotEmpty)
         '  subscribed now ${installed.subscribers.join(', ')}',
       if (installed.lastError != null) '  error ${installed.lastError}',
-      if (installed.configState.isNotEmpty) '  config ${installed.configState} revision ${installed.configRevision}',
-      if (installed.configSchema != null) '  config schema ${installed.configSchema}',
-      if (installed.configError != null) '  config error ${installed.configError}',
-      if (installed.configState.isNotEmpty) '  config file ${installed.dataDirectory}\\config.ayuconf',
+      if (installed.configState.isNotEmpty)
+        '  config ${installed.configState} revision ${installed.configRevision}',
+      if (installed.configSchema != null)
+        '  config schema ${installed.configSchema}',
+      if (installed.configError != null)
+        '  config error ${installed.configError}',
+      if (installed.configState.isNotEmpty)
+        '  config file ${installed.dataDirectory}\\config.ayuconf',
     ]);
     final stderr = installed.stderrTail.trim();
     if (stderr.isNotEmpty) {
@@ -812,8 +817,9 @@ final class PackageScanner {
         if (entity is! Directory) continue;
         final name = p.basename(entity.path);
         if (skippedDirectoryNames.contains(name) ||
-            _insideInstallTree(Directory(entity.path)))
+            _insideInstallTree(Directory(entity.path))) {
           continue;
+        }
         await _listAyu(Directory(entity.path), addFile, failures);
       }
     } on FileSystemException catch (error) {
@@ -923,8 +929,9 @@ final class PackageScanner {
     final cached = _cache[identity];
     if (cached != null &&
         cached.modifiedMs == modifiedMs &&
-        cached.length == stat.size)
+        cached.length == stat.size) {
       return cached;
+    }
     try {
       final opened = await AyuPackage.open(file);
       try {

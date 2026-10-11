@@ -118,7 +118,7 @@ final class PluginContext {
     _link.notify(IpcMethod.configStatus, {
       'state': state,
       'revision': revision,
-      if (schemaVersion != null) 'schema': schemaVersion,
+      'schema': ?schemaVersion,
       if (error != null && error.isNotEmpty) 'error': error,
     });
   }
@@ -311,10 +311,11 @@ final class PluginEvents {
             IpcMethod.eventPublishBatch,
             PublishedEventBatch(items).toJson(),
           );
-    if (!sent)
+    if (!sent) {
       _context.log.warn(
         '${items.length} published event(s) dropped: channel congested or closed',
       );
+    }
   }
 
   Future<EventSubscription> _subscribe(
@@ -492,8 +493,9 @@ final class PrimitiveObservations {
     list.removeWhere((e) => identical(e.$1, subscription));
     if (list.isNotEmpty) return;
     _observers.remove(subscription.id);
-    if (_deciders.containsKey(subscription.id) || !_context._link.isConnected)
+    if (_deciders.containsKey(subscription.id) || !_context._link.isConnected) {
       return;
+    }
     await _context._link.request(
       IpcMethod.observeUnsubscribe,
       PrimitiveSubscriptionSpec(subscription.id).toJson(),

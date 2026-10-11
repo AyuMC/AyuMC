@@ -86,7 +86,7 @@ void main() {
     final control = ServerControl(root: Directory.systemTemp);
     control.state = ServerRunState.running;
     expect(await control.start(), contains('already'));
-    expect(control.server, isNull);
+    expect(control.state, ServerRunState.running);
   });
 
   test('stop on an idle controller does not hang', () async {

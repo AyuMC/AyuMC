@@ -181,20 +181,22 @@ final class ManagerSession {
         buffer.writeln(
           '  ${paint('Newest server lines. P pauses this view. ${logs.capacity} lines are kept here.', '2')}',
         );
-        if (logs.dropped > 0)
+        if (logs.dropped > 0) {
           buffer.writeln(
             '  ${paint('${logs.dropped} older lines left this view.', '33')}',
           );
+        }
         buffer.writeln();
         final end = !followTail && logPin != null
             ? logPin!.clamp(0, logs.lines.length)
             : logs.lines.length;
         final start = end > 16 ? end - 16 : 0;
         final visible = logs.lines.skip(start).take(end - start);
-        if (visible.isEmpty)
+        if (visible.isEmpty) {
           buffer.writeln(
             '  ${paint('No log lines yet. Start the server from 6 Power.', '2')}',
           );
+        }
         for (final line in visible) {
           final clock =
               '${line.time.hour.toString().padLeft(2, '0')}:${line.time.minute.toString().padLeft(2, '0')}:${line.time.second.toString().padLeft(2, '0')}';
@@ -274,12 +276,14 @@ final class ManagerSession {
 
   String _hints() {
     final screen = catalogScreen;
-    if (screen == null)
+    if (screen == null) {
       return '1-6 move    Enter run    P pause logs    Q quit';
+    }
     if (screen.confirming) return 'Y confirm    N cancel';
     if (screen.filtering) return 'Type to filter    Enter done    Esc clear';
-    if (screen.detail)
+    if (screen.detail) {
       return 'A install+enable    N install    E D U X    Esc back';
+    }
     return 'Up Down select    Enter inspect    / filter    R refresh    Q quit';
   }
 

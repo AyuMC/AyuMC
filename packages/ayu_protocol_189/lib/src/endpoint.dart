@@ -128,8 +128,9 @@ final class ProtocolEndpoint {
     for (final connection in _connections) {
       if (!connection._announced || connection._closed) continue;
       final viewer = connection.session;
-      if (viewer != null && visibility.sees(viewer: viewer, subject: subject))
+      if (viewer != null && visibility.sees(viewer: viewer, subject: subject)) {
         return true;
+      }
     }
     return false;
   }
@@ -141,8 +142,10 @@ final class ProtocolEndpoint {
     for (final connection in _connections) {
       if (!connection._announced || connection._closed) continue;
       final viewer = connection.session;
-      if (viewer == null || !visibility.sees(viewer: viewer, subject: subject))
+      if (viewer == null ||
+          !visibility.sees(viewer: viewer, subject: subject)) {
         continue;
+      }
       connection._socket.add(packet);
       delivered++;
     }
@@ -455,8 +458,9 @@ final class _Connection {
         return;
       case 0x15:
         packet.readString();
-        if (packet.length < 4)
+        if (packet.length < 4) {
           throw const PacketFormatException('truncated client settings');
+        }
         return;
       default:
         return;

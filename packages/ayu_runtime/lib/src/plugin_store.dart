@@ -252,11 +252,13 @@ final class PluginStore {
         throw const FormatException('unknown state format');
       }
       final plugins = decoded['plugins'];
-      if (plugins is! List)
+      if (plugins is! List) {
         throw const FormatException('plugins must be a list');
+      }
       for (final item in plugins) {
-        if (item is! Map)
+        if (item is! Map) {
           throw const FormatException('plugin entry must be an object');
+        }
         final id = item['id'];
         final version = item['version'];
         final enabled = item['enabled'];

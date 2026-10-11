@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:ayu_logging/ayu_logging.dart';
-import 'package:ayu_package/ayu_package.dart';
 import 'package:ayu_protocol_189/ayu_protocol_189.dart';
 import 'package:ayu_runtime/ayu_runtime.dart';
 import 'package:path/path.dart' as p;
@@ -37,7 +36,8 @@ void main() {
       protocolVersion: 47,
       description: 'test',
       keepAliveInterval: const Duration(hours: 1),
-      interestedIn: (id) => host.primitives.hasObservers(id) || host.primitives.hasDeciders(id),
+      interestedIn: (id) =>
+          host.primitives.hasObservers(id) || host.primitives.hasDeciders(id),
       onPrimitive: (id, data) {
         if (host.primitives.hasDeciders(id)) {
           host.primitives.decide(id, data);
@@ -55,41 +55,70 @@ void main() {
     await temp.delete(recursive: true);
   });
 
-  test('join and leave are delivered once, and disappear when the pack is disabled', () async {
-    expect(host.eventPacks, isEmpty);
-    expect(endpoint.sessions, isEmpty);
+  test(
+    'join and leave are delivered once, and disappear when the pack is disabled',
+    () async {
+      expect(host.eventPacks, isEmpty);
+      expect(endpoint.sessions, isEmpty);
 
-    final audit = await host.install(await _auditPackage(packages));
-    expect(audit.state, PluginState.suspended, reason: 'required session contracts have no provider yet');
+      final audit = await host.install(await _auditPackage(packages));
+      expect(
+        audit.state,
+        PluginState.suspended,
+        reason: 'required session contracts have no provider yet',
+      );
 
-    final pack = await host.install(await _packPackage(packages));
-    expect(pack.state, PluginState.active);
-    expect(host.plugin('session_audit')!.state, PluginState.active);
-    expect(host.contracts.provider('session.joined')?.providerId, 'session_events');
+      final pack = await host.install(await _packPackage(packages));
+      expect(pack.state, PluginState.active);
+      expect(host.plugin('session_audit')!.state, PluginState.active);
+      expect(
+        host.contracts.provider('session.joined')?.providerId,
+        'session_events',
+      );
 
-    await _login(endpoint.port, 'Steve');
-    await _until(() => logs.count('PLAYER_JOINED username=Steve') == 1 && logs.count('PLAYER_LEFT username=Steve') == 1);
-    expect(logs.count('PLAYER_JOINED'), 1);
-    expect(logs.count('PLAYER_LEFT'), 1);
+      await _login(endpoint.port, 'Steve');
+      await _until(
+        () =>
+            logs.count('PLAYER_JOINED username=Steve') == 1 &&
+            logs.count('PLAYER_LEFT username=Steve') == 1,
+      );
+      expect(logs.count('PLAYER_JOINED'), 1);
+      expect(logs.count('PLAYER_LEFT'), 1);
 
-    await host.disable('session_events', cascade: true);
-    expect(host.plugin('session_audit')!.state, PluginState.suspended);
-    final joinedBefore = logs.count('PLAYER_JOINED');
-    final leftBefore = logs.count('PLAYER_LEFT');
-    await _login(endpoint.port, 'Alex');
-    await Future<void>.delayed(const Duration(milliseconds: 400));
-    expect(logs.count('PLAYER_JOINED'), joinedBefore);
-    expect(logs.count('PLAYER_LEFT'), leftBefore);
+      await host.disable('session_events', cascade: true);
+      expect(host.plugin('session_audit')!.state, PluginState.suspended);
+      final joinedBefore = logs.count('PLAYER_JOINED');
+      final leftBefore = logs.count('PLAYER_LEFT');
+      await _login(endpoint.port, 'Alex');
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      expect(logs.count('PLAYER_JOINED'), joinedBefore);
+      expect(logs.count('PLAYER_LEFT'), leftBefore);
 
-    await host.enable('session_events');
-    expect(host.plugin('session_audit')!.state, PluginState.active);
-    await _login(endpoint.port, 'Bob');
-    await _until(() => logs.count('PLAYER_JOINED username=Bob') == 1 && logs.count('PLAYER_LEFT username=Bob') == 1);
-  });
+      await host.enable('session_events');
+      expect(host.plugin('session_audit')!.state, PluginState.active);
+      await _login(endpoint.port, 'Bob');
+      await _until(
+        () =>
+            logs.count('PLAYER_JOINED username=Bob') == 1 &&
+            logs.count('PLAYER_LEFT username=Bob') == 1,
+      );
+    },
+  );
 }
 
 Future<File> _packPackage(Directory dir) {
-  final source = p.normalize(p.absolute(p.join('..', '..', 'event_packs_src', 'session_events', 'bin', 'main.dart')));
+  final source = p.normalize(
+    p.absolute(
+      p.join(
+        '..',
+        '..',
+        'event_packs_src',
+        'session_events',
+        'bin',
+        'main.dart',
+      ),
+    ),
+  );
   return writeFixturePackage(
     dir,
     id: 'session_events',
@@ -117,27 +146,46 @@ Future<File> _packPackage(Directory dir) {
 }
 
 Future<File> _auditPackage(Directory dir) {
-  final source = p.normalize(p.absolute(p.join('..', '..', 'examples', 'session_audit_plugin', 'bin', 'main.dart')));
+  final source = p.normalize(
+    p.absolute(
+      p.join(
+        '..',
+        '..',
+        'examples',
+        'session_audit_plugin',
+        'bin',
+        'main.dart',
+      ),
+    ),
+  );
   return writeFixturePackage(
     dir,
     id: 'session_audit',
     capabilities: const {'events'},
     description: 'source:$source',
     events: [
-      ContractRequirement(id: 'session.joined', version: VersionConstraint.parse('^1.0.0')),
-      ContractRequirement(id: 'session.left', version: VersionConstraint.parse('^1.0.0')),
+      ContractRequirement(
+        id: 'session.joined',
+        version: VersionConstraint.parse('^1.0.0'),
+      ),
+      ContractRequirement(
+        id: 'session.left',
+        version: VersionConstraint.parse('^1.0.0'),
+      ),
     ],
   );
 }
 
 Future<void> _login(int port, String name) async {
   final socket = await Socket.connect(InternetAddress.loopbackIPv4, port);
-  socket.add(encodePacket(0x00, [
-    ...encodeVarInt(47),
-    ...encodeString('localhost'),
-    ...encodeUnsignedShort(25565),
-    ...encodeVarInt(2),
-  ]));
+  socket.add(
+    encodePacket(0x00, [
+      ...encodeVarInt(47),
+      ...encodeString('localhost'),
+      ...encodeUnsignedShort(25565),
+      ...encodeVarInt(2),
+    ]),
+  );
   socket.add(encodePacket(0x00, encodeString(name)));
   final buffer = PacketBuffer();
   var frames = 0;
@@ -173,5 +221,6 @@ final class _RecordingLogger extends Logger {
   @override
   void error(String message) => lines.add(message);
 
-  int count(String fragment) => lines.where((line) => line.contains(fragment)).length;
+  int count(String fragment) =>
+      lines.where((line) => line.contains(fragment)).length;
 }

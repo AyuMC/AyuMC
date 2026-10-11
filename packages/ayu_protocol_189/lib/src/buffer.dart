@@ -53,8 +53,9 @@ final class PacketBuffer {
   }
 
   int readUnsignedShort() {
-    if (_end - _start < 2)
+    if (_end - _start < 2) {
       throw const PacketFormatException('truncated unsigned short');
+    }
     final value = (_bytes[_start] << 8) | _bytes[_start + 1];
     _start += 2;
     return value;
@@ -65,8 +66,9 @@ final class PacketBuffer {
     if (length < 0 || length > maxBytes) {
       throw PacketFormatException('string length $length exceeds $maxBytes');
     }
-    if (_end - _start < length)
+    if (_end - _start < length) {
       throw const PacketFormatException('truncated string');
+    }
     final bytes = _bytes.sublist(_start, _start + length);
     _start += length;
     try {
@@ -87,8 +89,9 @@ final class PacketBuffer {
   }
 
   double readDouble() {
-    if (_end - _start < 8)
+    if (_end - _start < 8) {
       throw const PacketFormatException('truncated double');
+    }
     final value = ByteData.sublistView(
       _bytes,
       _start,
@@ -110,8 +113,9 @@ final class PacketBuffer {
   }
 
   bool readBool() {
-    if (_end - _start < 1)
+    if (_end - _start < 1) {
       throw const PacketFormatException('truncated boolean');
+    }
     final value = _bytes[_start] != 0;
     _start += 1;
     return value;
