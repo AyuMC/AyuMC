@@ -129,6 +129,29 @@ final class _EngineLoop {
           cascade: args['cascade'] == true,
         );
         return const {'ok': true};
+      case 'config.schema':
+        return {'schema': _requireServer().config.describe()};
+      case 'config.get':
+        return {'schema': _requireServer().config.describe()};
+      case 'config.apply':
+        final applied = await _requireServer().config.apply(
+          path: args['path'] as String,
+          value: args['value'] as int,
+          expectedRevision: args['revision'] as int?,
+        );
+        return {
+          'applied': applied.toJson(),
+          'schema': _requireServer().config.describe(),
+        };
+      case 'config.save':
+        await _requireServer().config.flush();
+        return {'schema': _requireServer().config.describe()};
+      case 'diagnostics':
+        final current = server;
+        if (current == null) {
+          throw EngineException('server is stopped');
+        }
+        return current.diagnostics();
       case 'exit':
         await _stop();
         return const {'ok': true};
@@ -189,6 +212,13 @@ final class _EngineLoop {
       'sessions': current?.network?.sessions.length ?? 0,
       'acceptedMovement': current?.network?.acceptedMovementPackets ?? 0,
       'replicationDeliveries': current?.network?.replicationDeliveries ?? 0,
+      'configRevision': current?.config.revision,
+      'configPending': current?.config.hasPendingPersistence,
+      'configError': current?.config.configError,
+      'viewChunks': current?.config.value('viewChunks'),
+      'compressionThreshold': current?.config.value('compressionThreshold'),
+      'chunkDeliveries': current?.network?.chunkDeliveries ?? 0,
+      'chunkQueueDepth': current?.network?.chunkQueueDepth ?? 0,
     };
   }
 
@@ -491,6 +521,42 @@ final class EngineLink {
   Future<void> command(String line) async {
     await _call('command', {'line': line});
   }
+
+  /// Configuration schema, current values, revision, and pending state.
+  Future<Map<String, Object?>> configState() async {
+    final result = _map(await _call('config.get', {}));
+    return _map(result['schema']);
+  }
+
+  /// Applies one validated change. [revision] guards against a concurrent
+  /// update from another editor.
+  Future<Map<String, Object?>> configApply({
+    required String path,
+    required int value,
+    int? revision,
+  }) async {
+    final result = _map(
+      await _call('config.apply', {
+        'path': path,
+        'value': value,
+        'revision': ?revision,
+      }),
+    );
+    return {
+      'applied': _map(result['applied']),
+      'schema': _map(result['schema']),
+    };
+  }
+
+  /// Forces the coalesced configuration write to finish now.
+  Future<Map<String, Object?>> configSave() async {
+    final result = _map(await _call('config.save', {}));
+    return _map(result['schema']);
+  }
+
+  /// Read-only runtime diagnostics for the configuration screen.
+  Future<Map<String, Object?>> diagnostics() async =>
+      _map(await _call('diagnostics', {}));
 
   Future<List<EnginePackage>> packages() async {
     final result = _map(await _call('packages', {}));

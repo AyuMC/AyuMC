@@ -37,7 +37,22 @@ Future<void> _serve(Directory root) async {
     if (line == 'stats') {
       final network = server.network;
       stdout.writeln(
-        'AYU stats ${jsonEncode({'accepted': network?.acceptedMovementPackets ?? 0, 'encodes': network?.replicationEncodes ?? 0, 'deliveries': network?.replicationDeliveries ?? 0, 'bytes': network?.replicationBytes ?? 0, 'sessions': network?.sessions.length ?? 0})}',
+        'AYU stats ${jsonEncode({
+          'accepted': network?.acceptedMovementPackets ?? 0,
+          'encodes': network?.replicationEncodes ?? 0,
+          'deliveries': network?.replicationDeliveries ?? 0,
+          'bytes': network?.replicationBytes ?? 0,
+          'sessions': network?.sessions.length ?? 0,
+          'spawns': network?.entitySpawns ?? 0,
+          'destroys': network?.entityDestroys ?? 0,
+          'gapMaxMicros': network?.inboundGapMaxMicros ?? 0,
+          'delayMaxMicros': network?.replicationDelayMaxMicros ?? 0,
+          'chunkDeliveries': network?.chunkDeliveries ?? 0,
+          'chunkBytes': network?.chunkBytes ?? 0,
+          'chunkQueue': network?.chunkQueueDepth ?? 0,
+          'chunkUnloads': network?.chunkUnloads ?? 0,
+          ...?server.world?.stats(),
+        })}',
       );
     } else if (line == 'stop') {
       if (!done.isCompleted) done.complete();

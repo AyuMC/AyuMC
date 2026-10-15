@@ -15,6 +15,9 @@ Future<void> main(List<String> args) async {
   final seconds = _flag(args, '--seconds', 2);
   final hz = _flag(args, '--hz', 20);
   final warmupTicks = _flag(args, '--warmup-ticks', 5);
+  final spread = _flag(args, '--spread', 0);
+  final updateMs = _flag(args, '--update-ms', 0);
+  final visibility = _text(args, '--visibility', 'spatial');
   if (clients < 1 || seconds < 1 || hz < 1) {
     stderr.writeln('clients, seconds, and hz must be positive');
     exitCode = 1;
@@ -25,7 +28,7 @@ Future<void> main(List<String> args) async {
   final separator = Platform.pathSeparator;
   await Directory('${root.path}${separator}config').create();
   await File('${root.path}${separator}config${separator}server.json').writeAsString(
-    '{"profile":"AyuMC-1.8.9-release","port":0}',
+    '{"profile":"AyuMC-1.8.9-release","port":0,"visibility":"$visibility","viewChunks":10,"entityUpdateMillis":$updateMs}',
   );
   final core = Directory('${Directory.current.path}$separator..${separator}ayu_core');
   final server = await Process.start(Platform.resolvedExecutable, [
@@ -57,26 +60,43 @@ Future<void> main(List<String> args) async {
     final afterLogin = await _stats(server.stdin, ayu);
 
     final period = Duration(microseconds: (1000000 / hz).round());
-    await _drive(sims, warmupTicks, period);
+    if (spread > 0) {
+      for (final sim in sims) {
+        sim.sendPosition(8.5 + sim.index * spread);
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+    await _drive(sims, warmupTicks, period, spread);
     final afterWarmup = await _stats(server.stdin, ayu);
 
     final cpuBefore = await _sample(serverPid);
     final steady = Stopwatch()..start();
-    final lateTicks = await _drive(sims, hz * seconds, period);
+    final lateTicks = await _drive(sims, hz * seconds, period, spread);
     steady.stop();
     final afterSteady = await _stats(server.stdin, ayu);
     final cpuAfter = await _sample(serverPid);
     final inbound = sims.fold<int>(0, (sum, sim) => sum + sim.inboundBytes);
+    final decoded = sims.fold<int>(0, (sum, sim) => sum + sim.decodedEntities);
 
     final accepted = afterSteady['accepted']! - afterWarmup['accepted']!;
     final encodes = afterSteady['encodes']! - afterWarmup['encodes']!;
     final deliveries = afterSteady['deliveries']! - afterWarmup['deliveries']!;
     final bytes = afterSteady['bytes']! - afterWarmup['bytes']!;
-    stdout.writeln('measurement=server_process_only audience=all-to-all subscribers=none');
+    stdout.writeln(
+      'measurement=server_process_only visibility=$visibility spread=$spread update_ms=$updateMs subscribers=none',
+    );
     stdout.writeln('clients=$clients hz=$hz seconds=$seconds server_pid=$serverPid');
     stdout.writeln('login_ms=${login.elapsedMilliseconds} steady_ms=${steady.elapsedMilliseconds}');
     stdout.writeln('warmup_ticks=$warmupTicks late_ticks=$lateTicks');
-    stdout.writeln('steady_accepted=$accepted encodes=$encodes deliveries=$deliveries socket_add_bytes=$bytes');
+    stdout.writeln(
+      'steady_accepted=$accepted encodes=$encodes deliveries=$deliveries socket_add_bytes=$bytes',
+    );
+    stdout.writeln(
+      'steady_spawns=${afterSteady['spawns']! - afterWarmup['spawns']!} '
+      'destroys=${afterSteady['destroys']! - afterWarmup['destroys']!} '
+      'gap_max_micros=${afterSteady['gapMaxMicros']} delay_max_micros=${afterSteady['delayMaxMicros']}',
+    );
+    stdout.writeln('client_decoded_entity_packets=$decoded');
     stdout.writeln('login_accepted=${afterLogin['accepted']}');
     final drain = Stopwatch()..start();
     for (final sim in sims) {
@@ -105,13 +125,18 @@ Future<void> main(List<String> args) async {
   }
 }
 
-Future<int> _drive(List<_Sim> sims, int ticks, Duration period) async {
+String _text(List<String> args, String name, String fallback) {
+  final index = args.indexOf(name);
+  if (index < 0 || index + 1 >= args.length) return fallback;
+  return args[index + 1];
+}
+
+Future<int> _drive(List<_Sim> sims, int ticks, Duration period, int spread) async {
   final started = DateTime.now();
   var late = 0;
   for (var tick = 1; tick <= ticks; tick++) {
-    final x = 8.5 + tick * 0.25;
     for (final sim in sims) {
-      sim.sendPosition(x);
+      sim.sendPosition(8.5 + sim.index * spread + tick * 0.25);
     }
     final wait = started.add(period * tick).difference(DateTime.now());
     if (wait > Duration.zero) {
@@ -184,24 +209,27 @@ Future<({double cpu, int rss})?> _sample(int pid) async {
 }
 
 final class _Sim {
-  _Sim(this.socket, this.name) {
+  _Sim(this.socket, this.name, this.index) {
     final buffer = PacketBuffer();
-    var frames = 0;
     subscription = socket.listen((chunk) {
       inboundBytes += chunk.length;
-      if (frames >= 8) return;
       buffer.add(chunk);
-      while (frames < 8) {
-        if (buffer.readFrame() == null) return;
+      while (true) {
+        final frame = buffer.readFrame();
+        if (frame == null) return;
         frames++;
+        if (frame.isNotEmpty && _entityPacket(frame[0])) decodedEntities++;
+        if (frames >= 8 && !ready.isCompleted) ready.complete();
       }
-      if (!ready.isCompleted) ready.complete();
     }, onError: (_, _) {});
   }
 
+  static bool _entityPacket(int id) =>
+      id == 0x0C || id == 0x13 || id == 0x15 || id == 0x16 || id == 0x17 || id == 0x18 || id == 0x19 || id == 0x1C;
+
   static Future<_Sim> login(int port, int index) async {
     final socket = await Socket.connect(InternetAddress.loopbackIPv4, port);
-    final sim = _Sim(socket, 'p${index.toString().padLeft(3, '0')}');
+    final sim = _Sim(socket, 'p${index.toString().padLeft(3, '0')}', index);
     socket.add(encodePacket(0x00, [
       ...encodeVarInt(47),
       ...encodeString('localhost'),
@@ -215,8 +243,11 @@ final class _Sim {
 
   final Socket socket;
   final String name;
+  final int index;
   final Completer<void> ready = Completer<void>();
   int inboundBytes = 0;
+  int frames = 0;
+  int decodedEntities = 0;
   late final StreamSubscription<List<int>> subscription;
 
   void sendPosition(double x) {

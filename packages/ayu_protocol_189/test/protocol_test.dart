@@ -73,6 +73,10 @@ void main() {
       expect(login.readString(), 'Steve');
       expect(packets[1][0], 0x01);
       final entityId = ByteData.sublistView(packets[1], 1, 5).getInt32(0);
+      final ids = [
+        for (final packet in packets) (PacketBuffer()..add(packet)).readVarInt(),
+      ];
+      expect(ids.indexOf(0x21), lessThan(ids.indexOf(0x08)));
       expect(seen[ProtocolPrimitive.login]?.single['name'], 'Steve');
       expect(seen[ProtocolPrimitive.playJoined]?.single['uuid'], uuid);
       expect(endpoint.sessions.single.entityId, entityId);

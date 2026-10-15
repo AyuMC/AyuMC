@@ -1,0 +1,30 @@
+
+mode=inline clients=1 seconds=3
+login_ms=96 spawn_chunk_ms=72
+standing_before_0x08=1/1
+steady_ms=3010 client_decoded_0x21=56 client_inbound_bytes=3505379
+server_chunkDeliveries=56 chunkBytes=3505136 generates=63 dedup=84 probeLateMicros=8757 rss=289284096
+login_generates=6 login_deliveries=6
+server_rss_before=289853440 server_rss_after=289611776
+server_cpu_seconds=0.125
+chunkBytes are socket writes; client_decoded_0x21 is frames the simulator unpacked
+
+mode=workers=1 clients=1 seconds=3
+login_ms=62 spawn_chunk_ms=61
+standing_before_0x08=1/1
+steady_ms=3016 client_decoded_0x21=51 client_inbound_bytes=3196809
+server_chunkDeliveries=51 chunkBytes=3196566 generates=63 dedup=84 probeLateMicros=6648 rss=287522816
+login_generates=2 login_deliveries=1
+server_rss_before=289406976 server_rss_after=287813632
+server_cpu_seconds=0.250
+chunkBytes are socket writes; client_decoded_0x21 is frames the simulator unpacked
+
+mode=automatic clients=1 seconds=3
+login_ms=61 spawn_chunk_ms=60
+standing_before_0x08=1/1
+steady_ms=3008 client_decoded_0x21=51 client_inbound_bytes=3196809
+server_chunkDeliveries=51 chunkBytes=3196566 generates=63 dedup=84 probeLateMicros=5350 rss=292163584
+login_generates=1 login_deliveries=1
+server_rss_before=289452032 server_rss_after=292384768
+server_cpu_seconds=0.219
+chunkBytes are socket writes; client_decoded_0x21 is frames the simulator unpacked

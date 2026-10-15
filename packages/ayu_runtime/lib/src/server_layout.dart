@@ -12,6 +12,7 @@ import 'plugin_store.dart';
 /// ├── plugins/   regular plugin store (installed/, staging/, data/, state.json)
 /// ├── events/    event pack store (same structure)
 /// ├── config/    server.json (profile, network) and other host configuration
+/// ├── worlds/    per-world region logs, world.json, pregen tasks
 /// ├── logs/
 /// └── cache/
 /// ```
@@ -23,13 +24,14 @@ final class ServerLayout {
   PluginStoreLayout get plugins => PluginStoreLayout(Directory(p.join(root.path, 'plugins')));
   PluginStoreLayout get events => PluginStoreLayout(Directory(p.join(root.path, 'events')));
   Directory get config => Directory(p.join(root.path, 'config'));
+  Directory get worlds => Directory(p.join(root.path, 'worlds'));
   Directory get logs => Directory(p.join(root.path, 'logs'));
   Directory get cache => Directory(p.join(root.path, 'cache'));
 
   File get serverConfigFile => File(p.join(config.path, 'server.json'));
 
   Future<void> create() async {
-    for (final dir in [root, config, logs, cache]) {
+    for (final dir in [root, config, worlds, logs, cache]) {
       await dir.create(recursive: true);
     }
   }

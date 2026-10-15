@@ -96,6 +96,13 @@ packages:
       relative: true
     source: path
     version: "0.1.0"
+  ayu_world:
+    dependency: transitive
+    description:
+      path: "packages/ayu_world"
+      relative: true
+    source: path
+    version: "0.1.0"
   boolean_selector:
     dependency: transitive
     description:

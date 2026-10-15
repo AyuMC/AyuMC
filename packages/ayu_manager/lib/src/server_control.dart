@@ -126,6 +126,25 @@ final class ServerControl {
 
   Future<Map<String, Object?>> status() => _link.status();
 
+  /// Configuration schema plus current effective values and revision. The
+  /// engine owns the authoritative copy; the manager never keeps another one.
+  Future<Map<String, Object?>> configState() => _link.configState();
+
+  /// Sends one validated change to the engine. The engine applies it through
+  /// the owning component and persists it; a failure leaves the previous
+  /// value in force.
+  Future<Map<String, Object?>> applyConfig({
+    required String path,
+    required int value,
+    int? revision,
+  }) => _link.configApply(path: path, value: value, revision: revision);
+
+  /// Forces the engine's coalesced configuration write to finish now.
+  Future<Map<String, Object?>> saveConfig() => _link.configSave();
+
+  /// Live diagnostics (queues, views, worker plan, latency percentiles).
+  Future<Map<String, Object?>> diagnostics() => _link.diagnostics();
+
   Future<void> dispose() => _link.dispose();
 
   String _applyStart(Map<String, Object?> status) {

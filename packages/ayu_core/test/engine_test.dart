@@ -131,7 +131,9 @@ Future<void> _config(
   await Directory('${root.path}/config').create(recursive: true);
   await File(
     '${root.path}/config/server.json',
-  ).writeAsString('{"profile":"$profile","port":$port}');
+  ).writeAsString(
+    '{"profile":"$profile","port":$port,"viewChunks":2,"entityUpdateMillis":50}',
+  );
 }
 
 Future<_Client> _login(int port, String name) async {
@@ -171,15 +173,27 @@ final class _Client {
   Uint8List get uuid => offlinePlayerUuidBytes(name);
 
   Future<void> untilReady() async {
-    final deadline = DateTime.now().add(const Duration(seconds: 3));
-    while (frames.length < 8) {
+    final deadline = DateTime.now().add(const Duration(seconds: 8));
+    while (!_joinReady) {
       if (DateTime.now().isAfter(deadline)) fail('$name did not enter play');
       await Future<void>.delayed(const Duration(milliseconds: 10));
     }
   }
 
+  bool get _joinReady {
+    var chunk = -1;
+    var look = -1;
+    for (var i = 0; i < frames.length; i++) {
+      if (frames[i].isEmpty) continue;
+      final id = frames[i][0];
+      if (id == 0x21 && chunk < 0) chunk = i;
+      if (id == 0x08) look = i;
+    }
+    return chunk >= 0 && look > chunk;
+  }
+
   Future<void> untilSpawn(Uint8List other) async {
-    final deadline = DateTime.now().add(const Duration(seconds: 3));
+    final deadline = DateTime.now().add(const Duration(seconds: 8));
     while (!spawnFor(other)) {
       if (DateTime.now().isAfter(deadline)) {
         fail('$name did not see the other player');

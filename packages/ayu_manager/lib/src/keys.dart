@@ -6,8 +6,11 @@ enum ManagerKey {
   f4,
   f5,
   f6,
+  f7,
   up,
   down,
+  left,
+  right,
   enter,
   escape,
   backspace,
@@ -102,6 +105,8 @@ final class KeyDecoder {
   ManagerKey? _ss3(int byte) => switch (byte) {
     0x41 => ManagerKey.up,
     0x42 => ManagerKey.down,
+    0x43 => ManagerKey.right,
+    0x44 => ManagerKey.left,
     0x50 => ManagerKey.f1,
     0x51 => ManagerKey.f2,
     0x52 => ManagerKey.f3,
@@ -113,6 +118,8 @@ final class KeyDecoder {
   ManagerKey? _csi(String params, int finalByte) {
     if (finalByte == 0x41) return ManagerKey.up;
     if (finalByte == 0x42) return ManagerKey.down;
+    if (finalByte == 0x43) return ManagerKey.right;
+    if (finalByte == 0x44) return ManagerKey.left;
     if (finalByte != 0x7e) return null;
     final code = params.split(';').first;
     return switch (code) {
@@ -122,6 +129,7 @@ final class KeyDecoder {
       '14' => ManagerKey.f4,
       '15' => ManagerKey.f5,
       '17' => ManagerKey.f6,
+      '18' => ManagerKey.f7,
       _ => null,
     };
   }
@@ -138,7 +146,10 @@ final class KeyDecoder {
       0x3e => ManagerKey.f4,
       0x3f => ManagerKey.f5,
       0x40 => ManagerKey.f6,
+      0x41 => ManagerKey.f7,
       0x48 => ManagerKey.up,
+      0x4b => ManagerKey.left,
+      0x4d => ManagerKey.right,
       0x50 => ManagerKey.down,
       _ => null,
     };
@@ -154,5 +165,6 @@ ManagerKey? sectionKey(int number) => switch (number) {
   4 => ManagerKey.f4,
   5 => ManagerKey.f5,
   6 => ManagerKey.f6,
+  7 => ManagerKey.f7,
   _ => null,
 };

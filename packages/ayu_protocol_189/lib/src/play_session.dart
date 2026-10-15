@@ -33,6 +33,10 @@ final class PlaySession {
   bool sneaking = false;
   bool sprinting = false;
 
+  /// Chunks reported by the 1.8.9 client settings packet. Null until that
+  /// packet arrives; the server view distance is used in the meantime.
+  int? clientViewChunks;
+
   /// Protocol 47 entity flags: bit 1 sneak, bit 3 sprint.
   int get metadataFlags => (sneaking ? 0x02 : 0) | (sprinting ? 0x08 : 0);
 

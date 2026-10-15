@@ -3,12 +3,21 @@ import 'dart:io';
 import 'package:ayu_logging/ayu_logging.dart';
 
 import 'catalog_screen.dart';
+import 'config_screen.dart';
 import 'keys.dart';
 import 'log_buffer.dart';
 import 'package_desk.dart';
 import 'server_control.dart';
 
-enum ManagerSection { logs, plugins, events, console, dashboard, controls }
+enum ManagerSection {
+  logs,
+  plugins,
+  events,
+  console,
+  dashboard,
+  controls,
+  config,
+}
 
 /// UI state that does not touch the terminal. Tests drive it with [apply].
 final class ManagerSession {
@@ -30,6 +39,7 @@ final class ManagerSession {
   final LogBuffer logs;
   late final CatalogScreen pluginScreen;
   late final CatalogScreen eventScreen;
+  final ConfigScreen configScreen = ConfigScreen();
 
   ManagerSection section = ManagerSection.dashboard;
   bool followTail = true;
@@ -46,6 +56,22 @@ final class ManagerSession {
     ManagerSection.events => eventScreen,
     _ => null,
   };
+
+  /// Result of a key press that may target the configuration screen.
+  ConfigCommand? applyConfig(KeyEvent event) {
+    if (event.key != null) lastKey = event.key!.name;
+    if (event.text != null) lastKey = event.text!;
+    if (isConfig) {
+      return configScreen.handle(event);
+    }
+    return null;
+  }
+
+  bool get isConfig => section == ManagerSection.config;
+
+  /// Public view of the section router so the app can honour function keys
+  /// even while the configuration screen is capturing text.
+  ManagerSection? destinationFor(KeyEvent event) => _destination(event);
 
   CatalogCommand? apply(KeyEvent event) {
     if (event.key != null) lastKey = event.key!.name;
@@ -98,6 +124,7 @@ final class ManagerSession {
         ManagerKey.f4 => ManagerSection.console,
         ManagerKey.f5 => ManagerSection.dashboard,
         ManagerKey.f6 => ManagerSection.controls,
+        ManagerKey.f7 => ManagerSection.config,
         _ => null,
       };
     }
@@ -109,6 +136,7 @@ final class ManagerSession {
       '4' => ManagerSection.console,
       '5' => ManagerSection.dashboard,
       '6' => ManagerSection.controls,
+      '7' => ManagerSection.config,
       _ => null,
     };
   }
@@ -153,6 +181,7 @@ final class ManagerSession {
       (ManagerSection.console, '4  Console'),
       (ManagerSection.dashboard, '5  Home'),
       (ManagerSection.controls, '6  Power'),
+      (ManagerSection.config, '7  Config'),
     ];
     final tabBar = tabs
         .map((tab) {
@@ -238,6 +267,8 @@ final class ManagerSession {
           ..writeln(
             '  ${paint('Player counts are not shown until a session source reports them.', '2')}',
           );
+      case ManagerSection.config:
+        configScreen.render(buffer, paint, width);
       case ManagerSection.controls:
         buffer
           ..writeln('  ${paint('Power', '1')}')
@@ -275,9 +306,17 @@ final class ManagerSession {
   }
 
   String _hints() {
+    if (isConfig) {
+      if (configScreen.filtering) return 'Type to filter    Enter keep    Esc clear';
+      if (configScreen.editing) {
+        return 'Type a number    Enter apply    Esc cancel';
+      }
+      if (configScreen.help) return 'Any key closes help';
+      return configScreen.hints;
+    }
     final screen = catalogScreen;
     if (screen == null) {
-      return '1-6 move    Enter run    P pause logs    Q quit';
+      return '1-7 move    Enter run    P pause logs    Q quit';
     }
     if (screen.confirming) return 'Y confirm    N cancel';
     if (screen.filtering) return 'Type to filter    Enter done    Esc clear';

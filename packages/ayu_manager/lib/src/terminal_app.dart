@@ -10,6 +10,7 @@ import 'package:pub_semver/pub_semver.dart';
 
 import 'catalog.dart';
 import 'catalog_screen.dart';
+import 'config_screen.dart';
 import 'console_mode.dart';
 import 'keys.dart';
 import 'package_desk.dart';
@@ -101,6 +102,10 @@ final class ManagerApp {
   final Completer<void> _closed = Completer<void>();
 
   void _onKey(KeyEvent event) {
+    if (session.isConfig) {
+      _onConfigKey(event);
+      return;
+    }
     final screen = session.catalogScreen;
     final text = event.text?.toLowerCase();
     if (event.key == ManagerKey.quit) {
@@ -141,6 +146,99 @@ final class ManagerApp {
   void _dispatch(CatalogCommand? command) {
     if (command == null) return;
     unawaited(_execute(command));
+  }
+
+  /// Function keys always navigate, even while the configuration screen is
+  /// filtering or editing, so the user is never trapped on the page.
+  void _onConfigKey(KeyEvent event) {
+    final config = session.configScreen;
+    final typing = config.filtering || config.editing;
+    final destination = typing && event.key == null
+        ? null
+        : session.destinationFor(event);
+    if (destination != null) {
+      session.section = destination;
+      if (event.key != null) session.lastKey = event.key!.name;
+      if (destination == ManagerSection.config) unawaited(_loadConfig());
+      _dirty = true;
+      return;
+    }
+    final text = event.text?.toLowerCase();
+    if (!typing && text == 'y' && session.confirmQuit) {
+      unawaited(_quit());
+      return;
+    }
+    if (!typing && text == 'q') {
+      session.confirmQuit = !session.confirmQuit;
+      _dirty = true;
+      return;
+    }
+    _dispatchConfig(config.handle(event));
+  }
+
+  void _dispatchConfig(ConfigCommand? command) {
+    if (command == null) return;
+    unawaited(_executeConfig(command));
+  }
+
+  Future<void> _loadConfig() async {
+    final config = session.configScreen;
+    if (control.state != ServerRunState.running) {
+      config.loaded = false;
+      config.noteFailure(
+        'Start the server (6 Power) before reading runtime configuration.',
+      );
+      _dirty = true;
+      return;
+    }
+    config.loading = true;
+    _dirty = true;
+    await _executeConfig(const ConfigCommand.action(ConfigAction.load));
+  }
+
+  Future<void> _executeConfig(ConfigCommand command) async {
+    final config = session.configScreen;
+    if (command.action == ConfigAction.message) {
+      config.notice = command.message ?? '';
+      _dirty = true;
+      return;
+    }
+    if (control.state != ServerRunState.running) {
+      config.noteFailure(
+        'The server is not running, so there is no live configuration to change.',
+        path: command.path,
+      );
+      _dirty = true;
+      return;
+    }
+    try {
+      switch (command.action) {
+        case ConfigAction.load:
+          config.loadFrom(await control.configState());
+        case ConfigAction.apply:
+          final applied = await control.applyConfig(
+            path: command.path!,
+            value: command.value!,
+            revision: config.revision,
+          );
+          config.noteApplyResult(applied);
+        case ConfigAction.diagnostics:
+          config.loadDiagnostics(await control.diagnostics());
+        case ConfigAction.save:
+          final schema = await control.saveConfig();
+          config.loadFrom(schema);
+          config.noteSaveResult(
+            'Saved to ${schema['file'] ?? 'the configuration file'}.',
+          );
+        case ConfigAction.message:
+          break;
+      }
+    } on EngineException catch (error) {
+      config.noteFailure(error.message, path: command.path);
+    } catch (error) {
+      config.noteFailure('$error', path: command.path);
+    }
+    _dirty = true;
   }
 
   Future<void> _execute(CatalogCommand command) async {
@@ -261,6 +359,7 @@ final class ManagerApp {
     );
     await _watchHost();
     if (line == 'start' || line == 'restart') await session.desk.refresh();
+    if (session.isConfig) await _loadConfig();
     return result;
   }
 
@@ -373,6 +472,12 @@ final class ManagerApp {
         session.section = text == 'logs'
             ? ManagerSection.logs
             : ManagerSection.dashboard;
+        stdout.writeln(session.render(color: false));
+        continue;
+      }
+      if (text == 'config') {
+        session.section = ManagerSection.config;
+        await _loadConfig();
         stdout.writeln(session.render(color: false));
         continue;
       }

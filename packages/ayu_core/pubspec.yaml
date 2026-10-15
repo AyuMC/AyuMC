@@ -19,6 +19,8 @@ dependencies:
     path: ../ayu_protocol_189/
   ayu_runtime:
     path: ../ayu_runtime/
+  ayu_world:
+    path: ../ayu_world/
 
 dev_dependencies:
   lints: ^6.0.0

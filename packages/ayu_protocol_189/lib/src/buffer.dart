@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 /// A cursor over a growable byte buffer with Minecraft's VarInt, unsigned
@@ -44,6 +45,76 @@ final class PacketBuffer {
       _end = 0;
     }
     return frame;
+  }
+
+  /// Reads one compressed-framed packet after login negotiated compression.
+  ///
+  /// `VarInt length`, `VarInt dataLength`, payload. A zero `dataLength` means
+  /// the payload is the packet itself. The declared uncompressed size is
+  /// validated against [maxUncompressedBytes] before zlib runs, so a small
+  /// frame cannot ask for a huge allocation.
+  Uint8List? readCompressedFrame({
+    required int maxFrameBytes,
+    required int maxUncompressedBytes,
+  }) {
+    final frameStart = _start;
+    final length = _tryVarInt();
+    if (length == null) {
+      _start = frameStart;
+      return null;
+    }
+    if (length < 0 || length > maxFrameBytes) {
+      throw PacketFormatException(
+        'packet length $length exceeds $maxFrameBytes',
+      );
+    }
+    if (_end - _start < length) {
+      _start = frameStart;
+      return null;
+    }
+    final frameEnd = _start + length;
+    final dataLength = _tryVarInt();
+    if (dataLength == null) {
+      _start = frameStart;
+      return null;
+    }
+    if (dataLength < 0 || dataLength > maxUncompressedBytes) {
+      throw PacketFormatException(
+        'decompressed size $dataLength exceeds $maxUncompressedBytes',
+      );
+    }
+    final payloadStart = _start;
+    if (payloadStart > frameEnd) {
+      throw const PacketFormatException('compressed frame header overflow');
+    }
+    final Uint8List packet;
+    if (dataLength == 0) {
+      packet = _bytes.sublist(payloadStart, frameEnd);
+    } else {
+      final view = Uint8List.sublistView(_bytes, payloadStart, frameEnd);
+      final List<int> decoded;
+      try {
+        decoded = zlib.decode(view);
+      } on FormatException catch (error) {
+        throw PacketFormatException(
+          'zlib payload is invalid: ${error.message}',
+        );
+      } on ArgumentError {
+        throw const PacketFormatException('zlib payload is invalid');
+      }
+      if (decoded.length != dataLength) {
+        throw PacketFormatException(
+          'decompressed size ${decoded.length} does not match declared $dataLength',
+        );
+      }
+      packet = decoded is Uint8List ? decoded : Uint8List.fromList(decoded);
+    }
+    _start = frameEnd;
+    if (_start == _end) {
+      _start = 0;
+      _end = 0;
+    }
+    return packet;
   }
 
   int readVarInt() {
